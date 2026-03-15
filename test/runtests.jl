@@ -31,7 +31,7 @@ end
 @testset "package smoke" begin
     @test isdefined(LurCGT, :SU)
     @test isdefined(LurCGT, :getNsave_irep)
-    @test LurCGT.isabelian(LurCGT.U1)
+    @test isabelian(U1)
 end
 
 @testset "declared deps cover imports" begin
@@ -48,7 +48,7 @@ end
     @test isempty(undeclared)
 end
 
-function test_Fsym_unitarity(::Type{S}, test_inputs=100, qlimit=4) where S<:LurCGT.NonabelianSymm
+function test_Fsym_unitarity(::Type{S}, test_inputs=100, qlimit=4) where S<:NonabelianSymm
     for i in 1:test_inputs
         println("Test #$i started:")
         ins, out, fsym_mat = get_random_Fsymbol_real(S, Float64, qlimit)
@@ -58,7 +58,7 @@ function test_Fsym_unitarity(::Type{S}, test_inputs=100, qlimit=4) where S<:LurC
     end
 end
 
-function test_Rsym_unitarity(::Type{S}, test_inputs=30, qlimit=4) where S<:LurCGT.NonabelianSymm
+function test_Rsym_unitarity(::Type{S}, test_inputs=30, qlimit=4) where S<:NonabelianSymm
     for i in 1:test_inputs
         in, out, rsym_mat = get_random_Rsymbol_real(S, Float64, qlimit)
         sz = size(rsym_mat, 1)
@@ -68,35 +68,35 @@ function test_Rsym_unitarity(::Type{S}, test_inputs=30, qlimit=4) where S<:LurCG
 end
 
 @testset "CGTperm test" begin
-    test_CGTperm(LurCGT.SU{2}, 10000, 8, 100; verbose=0)
-    test_CGTperm(LurCGT.SU{3}, 500000, 3, 20; verbose=0)
+    test_CGTperm(SU{2}, 10000, 8, 100; verbose=0)
+    test_CGTperm(SU{3}, 500000, 3, 20; verbose=0)
 end
 
 @testset "Conjugation of CGT test (same input and output)" begin
-    test_CGT_conj_sameq(LurCGT.SU{3}, 1000, 3, 100, 20; verbose=0)
-    test_CGT_conj_sameq(LurCGT.SU{2}, 100, 8, 20, 100; verbose=0)
+    test_CGT_conj_sameq(SU{3}, 1000, 3, 100, 20; verbose=0)
+    test_CGT_conj_sameq(SU{2}, 100, 8, 20, 100; verbose=0)
 end
 
 @testset "Conjugation of CGT test" begin
-    test_CGT_conj(LurCGT.SU{3}, 500000, 3, 100, 20; verbose=0)
-    test_CGT_conj(LurCGT.SU{2}, 5000, 8, 20, 100; verbose=0)
+    test_CGT_conj(SU{3}, 500000, 3, 100, 20; verbose=0)
+    test_CGT_conj(SU{2}, 5000, 8, 20, 100; verbose=0)
 end
 
 # Test pentagon equation for F-symbols
 @testset "F-symbol pentagon equation tests" begin
-    test_pentagon_randinput(LurCGT.SU{2}, BigFloat, 6, 3000; verbose=0)
-    test_pentagon_randinput(LurCGT.SU{3}, BigFloat, 2, 100; verbose=0)
+    test_pentagon_randinput(SU{2}, BigFloat, 6, 3000; verbose=0)
+    test_pentagon_randinput(SU{3}, BigFloat, 2, 100; verbose=0)
 end
 
 @testset "X-symbol with 1j tests" begin
-    test_Xsym_1j(LurCGT.SU{2}, 1000, 10, 20, 1000; verbose=0)
-    test_Xsym_1j(LurCGT.SU{3}, 300000, 3, 100, 20; verbose=0)
+    test_Xsym_1j(SU{2}, 1000, 10, 20, 1000; verbose=0)
+    test_Xsym_1j(SU{3}, 300000, 3, 100, 20; verbose=0)
 end
 
 @testset "R-symbol from 1j tests" begin
-    test_rsym_from_1j(LurCGT.SU{2}, 15, 8)
-    test_rsym_from_1j(LurCGT.SU{3}, 5, 5)
-    test_rsym_from_1j(LurCGT.Sp{4}, 3, 6)
+    test_rsym_from_1j(SU{2}, 15, 8)
+    test_rsym_from_1j(SU{3}, 5, 5)
+    test_rsym_from_1j(Sp{4}, 3, 6)
 end
 
 sp6_dim = Dict(
@@ -113,7 +113,7 @@ sp6_dim = Dict(
 # Test whether the computed dimensions of Sp(6) irreps match known values
 @testset "Sp(6) irrep dimensionality tests" begin
     for (qlabel, dim) in sp6_dim
-        rep = LurCGT.getNsave_irep(LurCGT.Sp{6}, BigInt, qlabel)
+        rep = getNsave_irep(Sp{6}, BigInt, qlabel)
         computed_dim = LurCGT.dimension(rep)
         @assert computed_dim == dim 
         println("Sp(6) irrep $qlabel: dimension $computed_dim verified.")
@@ -121,23 +121,25 @@ sp6_dim = Dict(
 end
 
 @testset "F-symbol unitarity tests" begin
-    test_Fsym_unitarity(LurCGT.SU{3}, 20, 4)
-    test_Fsym_unitarity(LurCGT.SU{2}, 100, 10)
+    test_Fsym_unitarity(SU{3}, 20, 4)
+    test_Fsym_unitarity(SU{2}, 100, 10)
 end
 
 @testset "R-symbol unitarity tests" begin
-    test_Rsym_unitarity(LurCGT.SU{2}, 30, 10)
-    test_Rsym_unitarity(LurCGT.SU{3}, 20, 4)
+    test_Rsym_unitarity(SU{2}, 30, 10)
+    test_Rsym_unitarity(SU{3}, 20, 4)
 end
 
 @testset "permutation of FTree test" begin
-    test_permutation_randinput(LurCGT.SU{2}, 10000, 20, 100; verbose=0)
-    test_permutation_randinput(LurCGT.SU{3}, 100000, 100, 20; verbose=0)
+    test_permutation_randinput(SU{2}, 10000, 20, 100; verbose=0)
+    test_permutation_randinput(SU{3}, 100000, 100, 20; verbose=0)
 end
 
 @testset "X-symbol (normalized) test" begin
-    test_Xsym(LurCGT.SU{3}, 10000, 3, 20; verbose=0)
-    test_Xsym(LurCGT.SU{2}, 1000, 8, 100; verbose=0)
-    LurCGT.merge_all_to_global(LurCGT.SU{2})
-    LurCGT.merge_all_to_global(LurCGT.SU{3})
+    test_Xsym(SU{3}, 10000, 3, 20; verbose=0)
+    test_Xsym(SU{2}, 1000, 8, 100; verbose=0)
+    LurCGT.merge_all_to_global(SU{2})
+    LurCGT.merge_all_to_global(SU{3})
 end
+
+

@@ -12,8 +12,8 @@ function Fsymbol_toreal(::Type{S},
     in1::NTuple{NZ, Int}, 
     in2::NTuple{NZ, Int}, 
     in3::NTuple{NZ, Int}, 
-    out::NTuple{NZ, Int}) where {S<:LurCGT.NonabelianSymm, CT<:Number, FT<:Number, NZ}
-    fsym = LurCGT.getNsave_Fsymbol(S, CT, in1, in2, in3, out)
+    out::NTuple{NZ, Int}) where {S<:NonabelianSymm, CT<:Number, FT<:Number, NZ}
+    fsym = getNsave_Fsymbol(S, CT, in1, in2, in3, out)
 
     mat = fsym.fsym_mat
     sz = size(mat)[1]
@@ -31,7 +31,7 @@ function Fsymbol_fullarr(::Type{S},
     in1::NTuple{NZ, Int}, 
     in2::NTuple{NZ, Int}, 
     in3::NTuple{NZ, Int}, 
-    out::NTuple{NZ, Int}) where {S<:LurCGT.NonabelianSymm, NZ}
+    out::NTuple{NZ, Int}) where {S<:NonabelianSymm, NZ}
 
     # in1 * in2 -> e, e * in3 -> out
     es_list = LurCGT.find_espaces(S, in1, in2, in3, out, BigInt)
@@ -59,9 +59,9 @@ function Fsymbol_fullarr(::Type{S},
     # Fill in the es_contract_res
     for (e, _) in es_list
         # Load CG3 in1 ⊗ in2 -> e 
-        μblk, _, _ = LurCGT.load_cg3_float(S, BigInt, (in1, in2, e))
+        μblk, _, _ = load_cg3_float(S, BigInt, (in1, in2, e))
         # Load CG3 e ⊗ in3 -> out
-        νblk, _, _ = LurCGT.load_cg3_float(S, BigInt, (e, in3, out))
+        νblk, _, _ = load_cg3_float(S, BigInt, (e, in3, out))
 
         @tensor blk_contract[in1, in2, in3, out, ν, μ] := 
             μblk[in1, in2, e, μ] * νblk[e, in3, out, ν]
@@ -72,9 +72,9 @@ function Fsymbol_fullarr(::Type{S},
     fs_contract_res = Array{Float64, 6}[]
     for (f, _) in fs_list
         # Load CG3 in2 ⊗ in3 -> f
-        κblk, _, _ = LurCGT.load_cg3_float(S, BigInt, (in2, in3, f))
+        κblk, _, _ = load_cg3_float(S, BigInt, (in2, in3, f))
         # Load CG3 f ⊗ in1 -> out
-        λblk, _, _ = LurCGT.load_cg3_float(S, BigInt, (f, in1, out))
+        λblk, _, _ = load_cg3_float(S, BigInt, (f, in1, out))
 
         @tensor blk_contract[in1, in2, in3, out, λ, κ] := 
             κblk[in2, in3, f, κ] * λblk[f, in1, out, λ]
@@ -105,8 +105,8 @@ end
 
 function compare_two_ways_fsym()
     in1, in2, in3, out = (2, 2), (2, 2), (4, 4), (4, 4)
-    @time fsym_float1 = Fsymbol_toreal(LurCGT.SU{3}, BigInt, in1, in2, in3, out)
-    @time fsym_float2 = Fsymbol_fullarr(LurCGT.SU{3}, in1, in2, in3, out)
+    @time fsym_float1 = Fsymbol_toreal(SU{3}, BigInt, in1, in2, in3, out)
+    @time fsym_float2 = Fsymbol_fullarr(SU{3}, in1, in2, in3, out)
     display(fsym_float1)
     display(fsym_float2)
     println(norm(fsym_float1 - fsym_float2))
@@ -116,8 +116,8 @@ end
 function Rsymbol_toreal(::Type{S}, 
     ::Type{CT}, 
     in::NTuple{NZ, Int}, 
-    out::NTuple{NZ, Int}) where {S<:LurCGT.NonabelianSymm, CT<:Number, NZ}
-    rsym = LurCGT.getNsave_Rsymbol(S, CT, in, out)
+    out::NTuple{NZ, Int}) where {S<:NonabelianSymm, CT<:Number, NZ}
+    rsym = getNsave_Rsymbol(S, CT, in, out)
     mat = rsym.rsym_mat
     
     sz = size(mat)[1]
@@ -133,10 +133,10 @@ end
 
 function Rsymbol_fullarr(::Type{S},
     in::NTuple{NZ, Int},
-    out::NTuple{NZ, Int}) where {S<:LurCGT.NonabelianSymm, NZ}
+    out::NTuple{NZ, Int}) where {S<:NonabelianSymm, NZ}
 
     # in ⊗ in -> out
-    blk, _, _ = LurCGT.load_cg3_float(S, BigInt, (in, in, out))
+    blk, _, _ = load_cg3_float(S, BigInt, (in, in, out))
     out_dim = size(blk, 3)
     @tensor rsym[ν, μ] := blk[i2, i1, out, μ] * blk[i1, i2, out, ν]
     return Matrix{Float64}(rsym / out_dim)
@@ -145,8 +145,8 @@ end
 function compare_two_ways_rsym()
     #in, out = (4, 4), (4, 4)
     in, out = (1,), (0,)
-    @time rsym_float1 = Rsymbol_toreal(LurCGT.SU{2}, BigInt, in, out)
-    @time rsym_float2 = Rsymbol_fullarr(LurCGT.SU{2}, in, out)
+    @time rsym_float1 = Rsymbol_toreal(SU{2}, BigInt, in, out)
+    @time rsym_float2 = Rsymbol_fullarr(SU{2}, in, out)
     display(rsym_float1)
     display(rsym_float2)
     println(norm(rsym_float1 - rsym_float2))
@@ -154,11 +154,11 @@ function compare_two_ways_rsym()
 end
 
 # Test permutation using F/R-symbol works well
-function test_permutation(::Type{S}, ins, out, perm, ::Type{FT}; verbose=0) where {S<:LurCGT.NonabelianSymm, FT<:AbstractFloat}
+function test_permutation(::Type{S}, ins, out, perm, ::Type{FT}; verbose=0) where {S<:NonabelianSymm, FT<:AbstractFloat}
     FTree = LurCGT.random_FTree(S, Tuple(ins), (out,))
 
     # First, get an Float array and permute
-    arr_perm = LurCGT.FTree2arr(FTree, FT)
+    arr_perm = FTree2arr(FTree, FT)
     arr_perm = permutedims(arr_perm, perm)
 
     # Second, get a permuted FTree and convert it to array
@@ -166,7 +166,7 @@ function test_permutation(::Type{S}, ins, out, perm, ::Type{FT}; verbose=0) wher
     for (i, j) in switch_list
         FTree = LurCGT.permute_adjacent!(FTree, i, j; verbose)
     end
-    arr_perm2 = LurCGT.FTree2arr(FTree, FT)
+    arr_perm2 = FTree2arr(FTree, FT)
 
     # The two results should be the same
     return arr_perm, arr_perm2, norm(arr_perm - arr_perm2)
@@ -192,13 +192,13 @@ function decompose_perm(perm)
 end
 
 # Test permutation with random inputs
-function generate_incom(::Type{S}, dim_limit, qlimit=4) where S<:LurCGT.NonabelianSymm
-    NZ = LurCGT.nzops(S)
+function generate_incom(::Type{S}, dim_limit, qlimit=4) where S<:NonabelianSymm
+    NZ = nzops(S)
     ins = Vector{NTuple{NZ, Int}}()
     dim = 1
     while true
         qlabel = Tuple(rand(0:qlimit) for _=1:NZ)
-        irep_dim = LurCGT.dimension(LurCGT.getNsave_irep(S, BigInt, qlabel))
+        irep_dim = LurCGT.dimension(getNsave_irep(S, BigInt, qlabel))
         prod_dim = dim * irep_dim
         if prod_dim > dim_limit break end
         push!(ins, qlabel)
@@ -207,12 +207,12 @@ function generate_incom(::Type{S}, dim_limit, qlimit=4) where S<:LurCGT.Nonabeli
     return ins
 end
 
-function test_permutation_randinput(::Type{S}, dim_limit=100000, outlimit=100, test_inputs=20; verbose=0) where S<:LurCGT.NonabelianSymm
+function test_permutation_randinput(::Type{S}, dim_limit=100000, outlimit=100, test_inputs=20; verbose=0) where S<:NonabelianSymm
     for i in 1:test_inputs
         ins = sort(generate_incom(S, dim_limit))
         N = length(ins)
         if N < 2 continue end
-        vo = LurCGT.getNsave_validout(S, Tuple(ins))
+        vo = getNsave_validout(S, Tuple(ins))
         out = select_out(vo, outlimit)
         perm = (get_rand_perm(N)..., N+1)
 
@@ -238,13 +238,13 @@ function get_rand_perm(N)
     end
 end
 
-function dimension(::Type{S}, qlabel::NTuple{NZ, Int}) where {S<:LurCGT.NonabelianSymm, NZ}
-    irep = LurCGT.getNsave_irep(S, BigInt, qlabel)
+function dimension(::Type{S}, qlabel::NTuple{NZ, Int}) where {S<:NonabelianSymm, NZ}
+    irep = getNsave_irep(S, BigInt, qlabel)
     return LurCGT.dimension(irep)
 end
 
-function select_out(vo::LurCGT.ValidOuts{S, N, NZ},
-    outlimit=100) where {S<:LurCGT.NonabelianSymm, N, NZ}
+function select_out(vo::ValidOuts{S, N, NZ},
+    outlimit=100) where {S<:NonabelianSymm, N, NZ}
     outlist = vo.out_spaces
     outdims = [dimension(S, out) for out in outlist]
     if minimum(outdims) > outlimit
@@ -259,7 +259,7 @@ end
 
 function select_out(::Type{S},
     vec::Vector{NTuple{NZ, Int}},
-    outlimit=100) where {S<:LurCGT.NonabelianSymm, NZ}
+    outlimit=100) where {S<:NonabelianSymm, NZ}
 
     outdims = [dimension(S, out) for out in vec]
     if minimum(outdims) > outlimit
@@ -273,8 +273,8 @@ function select_out(::Type{S},
 end
 
 # Getting random F-symbol
-function generate_incom_3spaces(::Type{S}, qlimit=4) where S<:LurCGT.NonabelianSymm
-    NZ = LurCGT.nzops(S)
+function generate_incom_3spaces(::Type{S}, qlimit=4) where S<:NonabelianSymm
+    NZ = nzops(S)
     ins = Vector{NTuple{NZ, Int}}()
     for _=1:3
         qlabel = Tuple(rand(0:qlimit) for _=1:NZ)
@@ -282,26 +282,26 @@ function generate_incom_3spaces(::Type{S}, qlimit=4) where S<:LurCGT.NonabelianS
     end
 
     ins_sorted = sort(ins)
-    vo = LurCGT.getNsave_validout(S, Tuple(ins_sorted))
+    vo = getNsave_validout(S, Tuple(ins_sorted))
     out = select_out(vo, 100)
 
     return ins, out
 end
 
-function get_random_Fsymbol(::Type{S}, ::Type{FT}, qlimit=4) where {S<:LurCGT.NonabelianSymm, FT<:Integer}
+function get_random_Fsymbol(::Type{S}, ::Type{FT}, qlimit=4) where {S<:NonabelianSymm, FT<:Integer}
     ins, out = generate_incom_3spaces(S, qlimit)
-    return ins, out, LurCGT.getNsave_Fsymbol(S, BigInt, ins[1], ins[2], ins[3], out)
+    return ins, out, getNsave_Fsymbol(S, BigInt, ins[1], ins[2], ins[3], out)
 end
 
-function get_random_Fsymbol_real(::Type{S}, ::Type{FT}, qlimit=4) where {S<:LurCGT.NonabelianSymm, FT<:AbstractFloat}
+function get_random_Fsymbol_real(::Type{S}, ::Type{FT}, qlimit=4) where {S<:NonabelianSymm, FT<:AbstractFloat}
     ins, out = generate_incom_3spaces(S, qlimit)
     return ins, out, Fsymbol_toreal(S, BigInt, BigFloat, ins[1], ins[2], ins[3], out)
 end
 
-function get_random_Rsymbol_real(::Type{S}, ::Type{FT}, qlimit=4) where {S<:LurCGT.NonabelianSymm, FT<:AbstractFloat}
-    NZ = LurCGT.nzops(S)
+function get_random_Rsymbol_real(::Type{S}, ::Type{FT}, qlimit=4) where {S<:NonabelianSymm, FT<:AbstractFloat}
+    NZ = nzops(S)
     qlabel = Tuple(rand(0:qlimit) for _=1:NZ)
-    vo = LurCGT.getNsave_validout(S, (qlabel, qlabel))
+    vo = getNsave_validout(S, (qlabel, qlabel))
     out = select_out(vo, 100)
     return qlabel, out, Rsymbol_toreal(S, BigInt, qlabel, out)
 end
@@ -328,9 +328,9 @@ function get_spaces(::Type{S},
     dim_limit::Int, 
     qlimit::Int, 
     outlimit::Int; 
-    verbose) where S<:LurCGT.NonabelianSymm
+    verbose) where S<:NonabelianSymm
 
-    NZ = LurCGT.nzops(S)
+    NZ = nzops(S)
     # Get input and output of the first CGT
     incom = sort(generate_incom(S, dim_limit, qlimit))
     len = length(incom)
@@ -347,12 +347,12 @@ function get_spaces(::Type{S},
 
     # If there is no common factor of product of input and product of output, skip
     if cgt1_up > 1
-        vo_out = LurCGT.getNsave_validout(S, Tuple(cgt1_outsp))
+        vo_out = getNsave_validout(S, Tuple(cgt1_outsp))
         possible_out = Set(vo_out.out_spaces)
     else possible_out = Set(cgt1_outsp[1]) end
 
     if cgt1_dn > 1
-        vo_in = LurCGT.getNsave_validout(S, Tuple(cgt1_insp))
+        vo_in = getNsave_validout(S, Tuple(cgt1_insp))
         possible_in = Set(vo_in.out_spaces)
     else possible_in = Set(cgt1_insp[1]) end
 
@@ -375,7 +375,7 @@ function get_spaces(::Type{S},
     # List of contracted spaces
     contracted_spaces = vcat(contracted_1out2in, contracted_1in2out)
     # Product of dimensions of contracted spaces
-    contracted_dim = prod([LurCGT.dimension(LurCGT.getNsave_irep(S, BigInt, sp)) 
+    contracted_dim = prod([LurCGT.dimension(getNsave_irep(S, BigInt, sp)) 
                             for sp in contracted_spaces])
 
 
@@ -421,12 +421,12 @@ function get_spaces(::Type{S},
 
         # Check whether the output spaces are valid
         if length(cgt2_insp) > 1
-            vo_in2 = LurCGT.getNsave_validout(S, Tuple(cgt2_insp))
+            vo_in2 = getNsave_validout(S, Tuple(cgt2_insp))
             possible_in = Set(vo_in2.out_spaces)
         else possible_in = Set(cgt2_insp[1]) end
 
         if length(cgt2_outsp) > 1
-            vo_out2 = LurCGT.getNsave_validout(S, Tuple(cgt2_outsp))
+            vo_out2 = getNsave_validout(S, Tuple(cgt2_outsp))
             possible_out = Set(vo_out2.out_spaces)
         else possible_out = Set(cgt2_outsp[1]) end
 
@@ -508,9 +508,9 @@ function test_Xsymbol_randinput(::Type{S},
     qlimit=4,
     outlimit=100,
     ninput=40;
-    verbose=0) where {S<:LurCGT.NonabelianSymm, FT<:AbstractFloat}
+    verbose=0) where {S<:NonabelianSymm, FT<:AbstractFloat}
 
-    NZ = LurCGT.nzops(S)
+    NZ = nzops(S)
     for i in 1:ninput
         println("Test input #$i")
         spaces = nothing
@@ -538,21 +538,21 @@ function test_Xsymbol_randinput(::Type{S},
         CGT2up = LurCGT.random_FTree(S, Tuple(cgt2_outsp), (cgt2_internalsp,))
         CGT2down = LurCGT.random_FTree(S, Tuple(cgt2_insp), (cgt2_internalsp,))
 
-        CGT1up_arr = LurCGT.FTree2arr(CGT1up, FT, false)
-        CGT1down_arr = LurCGT.FTree2arr(CGT1down, FT, false)
-        CGT2up_arr = LurCGT.FTree2arr(CGT2up, FT, false)
-        CGT2down_arr = LurCGT.FTree2arr(CGT2down, FT, false)
+        CGT1up_arr = FTree2arr(CGT1up, FT, false)
+        CGT1down_arr = FTree2arr(CGT1down, FT, false)
+        CGT2up_arr = FTree2arr(CGT2up, FT, false)
+        CGT2down_arr = FTree2arr(CGT2down, FT, false)
 
         # Written in old convention except this part
         println("CGT1: $(cgt1_outsp)->$(cgt1_internalsp)->$(cgt1_insp)")
         println("CGT2: $(cgt2_outsp)->$(cgt2_internalsp)->$(cgt2_insp)")
         println("contracted legs: $(cgt1legs) of CGT1, $(cgt2legs) of CGT2")
 
-        CGT1 = LurCGT.contract_arrs(CGT1up_arr, CGT1down_arr, 
+        CGT1 = contract_arrs(CGT1up_arr, CGT1down_arr, 
                              (length(cgt1_outsp)+1,), (length(cgt1_insp)+1,))
-        CGT2 = LurCGT.contract_arrs(CGT2up_arr, CGT2down_arr, 
+        CGT2 = contract_arrs(CGT2up_arr, CGT2down_arr, 
                              (length(cgt2_outsp)+1,), (length(cgt2_insp)+1,))
-        arr1 = LurCGT.contract_arrs(CGT1, CGT2, Tuple(cgt1legs), Tuple(cgt2legs))
+        arr1 = contract_arrs(CGT1, CGT2, Tuple(cgt1legs), Tuple(cgt2legs))
 
         # permute the contraction result
         nout1, nin1 = length(cgt1_outsp), length(cgt1_insp)
@@ -624,14 +624,14 @@ end
 # Get the sparse array from final result of getting X-symbol
 function contract(step2_result::LurCGT.Step2_result{S, NI, NO, NZ, M},
     ::Type{FT};
-    verbose=0) where {S<:LurCGT.NonabelianSymm, NI, NO, NZ, M, FT<:AbstractFloat}
+    verbose=0) where {S<:NonabelianSymm, NI, NO, NZ, M, FT<:AbstractFloat}
     szs = Int[]
     for insp in step2_result.ins
-        irep = LurCGT.getNsave_irep(S, BigInt, insp)
+        irep = getNsave_irep(S, BigInt, insp)
         push!(szs, LurCGT.dimension(irep))
     end
     for outsp in step2_result.outs
-        irep = LurCGT.getNsave_irep(S, BigInt, outsp)
+        irep = getNsave_irep(S, BigInt, outsp)
         push!(szs, LurCGT.dimension(irep))
     end
     arr = SparseArray(zeros(FT, szs...))
@@ -644,16 +644,16 @@ function contract(step2_result::LurCGT.Step2_result{S, NI, NO, NZ, M},
     elseif NO == 1
         @assert NI >= 2
         for intsps in keys(step2_result.coeff)
-            cont_res = LurCGT.contract_CG3s(S, collect(step2_result.ins), step2_result.outs[1], intsps, Val(NI), FT)
+            cont_res = contract_CG3s(S, collect(step2_result.ins), step2_result.outs[1], intsps, Val(NI), FT)
             om_arr = SparseArray{FT}(step2_result.coeff[intsps] * step2_result.coeff_nfac[intsps])
-            arr += LurCGT.contract_om(cont_res, om_arr, Val(NI))
+            arr += contract_om(cont_res, om_arr, Val(NI))
         end
     elseif NI == 1
         @assert NO >= 2
         for intsps in keys(step2_result.coeff)
-            cont_res = LurCGT.contract_CG3s(S, collect(step2_result.outs), step2_result.ins[1], intsps, Val(NO), FT)
+            cont_res = contract_CG3s(S, collect(step2_result.outs), step2_result.ins[1], intsps, Val(NO), FT)
             om_arr = SparseArray{FT}(step2_result.coeff[intsps] * step2_result.coeff_nfac[intsps])
-            contracted = LurCGT.contract_om(cont_res, om_arr, Val(NO))
+            contracted = contract_om(cont_res, om_arr, Val(NO))
             arr += permutedims(contracted, (NO+1, collect(1:NO)...))
         end
     else # Both NI and NO are greater than 1
@@ -661,8 +661,8 @@ function contract(step2_result::LurCGT.Step2_result{S, NI, NO, NZ, M},
         for (i, intsps) in enumerate(keys(step2_result.coeff))
             if verbose > 1 println("$(i)/$(length(keys(step2_result.coeff)))") end
             center_sp = intsps[NI-1]
-            cont_res_up = LurCGT.contract_CG3s(S, collect(step2_result.ins), center_sp, intsps[1:NI-2], Val(NI), FT)
-            cont_res_dn = LurCGT.contract_CG3s(S, collect(step2_result.outs), center_sp, intsps[NI:end], Val(NO), FT)
+            cont_res_up = contract_CG3s(S, collect(step2_result.ins), center_sp, intsps[1:NI-2], Val(NI), FT)
+            cont_res_dn = contract_CG3s(S, collect(step2_result.outs), center_sp, intsps[NI:end], Val(NO), FT)
             om_arr = SparseArray{FT}(step2_result.coeff[intsps] * step2_result.coeff_nfac[intsps])
             newentry = contract_om_step3(cont_res_up, cont_res_dn, om_arr, Val(NI), Val(NO))
             arr += newentry
@@ -672,11 +672,11 @@ function contract(step2_result::LurCGT.Step2_result{S, NI, NO, NZ, M},
 end
 
 # Test 1j-symbol == CG3 with qlabel = (qlabel, reverse(qlabel), 0)
-function test_1j(::Type{S}, qlimit=6, test_inputs=10) where {S<:LurCGT.NonabelianSymm}
-    NZ = LurCGT.nzops(S)
+function test_1j(::Type{S}, qlimit=6, test_inputs=10) where {S<:NonabelianSymm}
+    NZ = nzops(S)
     for i in 1:test_inputs
         qlabel = Tuple(rand(0:qlimit) for _=1:NZ)
-        dualq = LurCGT.get_dualq(S, qlabel)
+        dualq = get_dualq(S, qlabel)
         zq = Tuple(0 for _=1:NZ)
         blks_1j, nfac_1j = LurCGT.load_1jblk(S, BigInt, BigInt, qlabel)
         blks_cg3, nfac_cg3 = LurCGT.load_cg3blk(S, BigInt, (qlabel, dualq), [zq])[zq]
@@ -698,19 +698,19 @@ function test_1j(::Type{S}, qlimit=6, test_inputs=10) where {S<:LurCGT.Nonabelia
                 error("1j-symbol test failed for weight ($(w1), $(w2))")
             end
         end
-        println("Test #$i: $(LurCGT.totxt(S)) 1j-symbol test passed for qlabel: $(qlabel)")
+        println("Test #$i: $(totxt(S)) 1j-symbol test passed for qlabel: $(qlabel)")
     end
 end
 
 function test_rsym_from_1j(::Type{S},
     qlimit=4,
-    test_inputs=10) where {S<:LurCGT.NonabelianSymm}
+    test_inputs=10) where {S<:NonabelianSymm}
 
-    NZ = LurCGT.nzops(S)
+    NZ = nzops(S)
     for i in 1:test_inputs
         println("Test input #$i")
         out = Tuple(0 for _=1:NZ)
-        if S <: LurCGT.SU
+        if S <: SU
             q = rand(0:qlimit)
             in = Tuple(q for _=1:NZ)
         else
@@ -734,7 +734,7 @@ function test_rsym_from_1j(::Type{S},
         @assert size(rsym_mat_) == (1, 1)
         @assert abs(rsym_mat_[1, 1]) == fac[1].den
 
-        r = LurCGT.getNsave_Rsymbol(S, BigInt, in, out; verbose=0)
+        r = getNsave_Rsymbol(S, BigInt, in, out; verbose=0)
         @assert r.nfactor == fac
         @assert r.rsym_mat == rsym_mat_
         println("R-symbol test passed for input: $(in), output: $(out) with value $(rsym_mat_[1, 1]*fac[1])")
@@ -744,17 +744,17 @@ end
 
 # This function should be tested when there is no HDF5 file existing.
 # Test HDF5 I/O functionality
-function test_hdf5_io(::Type{S}) where {S<:LurCGT.NonabelianSymm}
-    NZ = LurCGT.nzops(S)
+function test_hdf5_io(::Type{S}) where {S<:NonabelianSymm}
+    NZ = nzops(S)
     
     # Test Irep save/load
     println("Testing Irep save/load...")
     test_qlabel = ntuple(i -> i == 1 ? 2 : (i == 2 && NZ >= 2 ? 1 : 0), NZ)
     # Use getNsave to generate and save
-    irep_orig = LurCGT.getNsave_irep(S, BigInt, test_qlabel)
+    irep_orig = getNsave_irep(S, BigInt, test_qlabel)
     
     # Load directly to verify save worked
-    irep_loaded = LurCGT.getNsave_irep(S, BigInt, test_qlabel)
+    irep_loaded = getNsave_irep(S, BigInt, test_qlabel)
     @assert !isnothing(irep_loaded)
     @assert irep_loaded.qlabel == irep_orig.qlabel
     @assert irep_loaded.dimension == irep_orig.dimension
@@ -769,12 +769,12 @@ function test_hdf5_io(::Type{S}) where {S<:LurCGT.NonabelianSymm}
     LurCGT.generate_every_CGT(S, BigInt, BigInt, (q1, q2), nothing; verbose=0)
     
     # Get valid outputs using getNsave
-    vo = LurCGT.getNsave_validout(S, (q1, q2))
+    vo = getNsave_validout(S, (q1, q2))
     @assert !isnothing(vo) && length(vo.out_spaces) > 0
     possible_out = vo.out_spaces[1]
     
     # Use getNsave_cg3 to verify data accessibility
-    cg3s_loaded = LurCGT.getNsave_cg3(S, BigInt, (q1, q2), [possible_out])
+    cg3s_loaded = getNsave_cg3(S, BigInt, (q1, q2), [possible_out])
     @assert !isnothing(cg3s_loaded)
     @assert !isempty(cg3s_loaded[possible_out].blocks)
     @assert length(cg3s_loaded[possible_out].nfactor) > 0
@@ -784,12 +784,12 @@ function test_hdf5_io(::Type{S}) where {S<:LurCGT.NonabelianSymm}
     println("Testing F-symbol save/load...")
     in1, in2, in3 = q1, q2, q1
     # Find a valid output for F-symbol
-    vo_f = LurCGT.getNsave_validout(S, sort((in1, in2, in3)))
+    vo_f = getNsave_validout(S, sort((in1, in2, in3)))
     @assert !isnothing(vo_f) && length(vo_f.out_spaces) > 0
     out = vo_f.out_spaces[1]
     
     # Use getNsave to generate and save
-    fsym = LurCGT.getNsave_Fsymbol(S, BigInt, in1, in2, in3, out; verbose=0)
+    fsym = getNsave_Fsymbol(S, BigInt, in1, in2, in3, out; verbose=0)
     @assert !isnothing(fsym)
     @assert fsym.in1 == in1
     @assert fsym.in2 == in2
@@ -797,7 +797,7 @@ function test_hdf5_io(::Type{S}) where {S<:LurCGT.NonabelianSymm}
     @assert fsym.out == out
     
     # Call again to verify load works
-    fsym_loaded = LurCGT.getNsave_Fsymbol(S, BigInt, in1, in2, in3, out; verbose=0)
+    fsym_loaded = getNsave_Fsymbol(S, BigInt, in1, in2, in3, out; verbose=0)
     @assert !isnothing(fsym_loaded)
     @assert size(fsym_loaded.fsym_mat) == size(fsym.fsym_mat)
     println("  F-symbol save/load: PASSED")
@@ -807,13 +807,13 @@ function test_hdf5_io(::Type{S}) where {S<:LurCGT.NonabelianSymm}
     in_r = q1
     out_r = q1 .* 2
     # Use getNsave to generate and save
-    rsym = LurCGT.getNsave_Rsymbol(S, BigInt, in_r, out_r; verbose=0)
+    rsym = getNsave_Rsymbol(S, BigInt, in_r, out_r; verbose=0)
     @assert !isnothing(rsym)
     @assert rsym.in == in_r
     @assert rsym.out == out_r
     
     # Call again to verify load works
-    rsym_loaded = LurCGT.getNsave_Rsymbol(S, BigInt, in_r, out_r; verbose=0)
+    rsym_loaded = getNsave_Rsymbol(S, BigInt, in_r, out_r; verbose=0)
     @assert !isnothing(rsym_loaded)
     @assert size(rsym_loaded.rsym_mat) == size(rsym.rsym_mat)
     println("  R-symbol save/load: PASSED")
@@ -823,13 +823,13 @@ function test_hdf5_io(::Type{S}) where {S<:LurCGT.NonabelianSymm}
     incom_test = (q1, q2)
     out_test = possible_out
     # Use getNsave to generate and save
-    omlist = LurCGT.getNsave_omlist(S, incom_test, out_test)
+    omlist = getNsave_omlist(S, incom_test, out_test)
     @assert !isnothing(omlist)
     @assert omlist.incom_spaces == incom_test
     @assert omlist.out_space == out_test
     
     # Call again to verify load works
-    omlist_loaded = LurCGT.getNsave_omlist(S, incom_test, out_test)
+    omlist_loaded = getNsave_omlist(S, incom_test, out_test)
     @assert !isnothing(omlist_loaded)
     @assert omlist_loaded.totalOM == omlist.totalOM
     println("  OMList save/load: PASSED")
@@ -837,12 +837,12 @@ function test_hdf5_io(::Type{S}) where {S<:LurCGT.NonabelianSymm}
     # Test ValidOuts save/load
     println("Testing ValidOuts save/load...")
     # Use getNsave to generate and save
-    vo = LurCGT.getNsave_validout(S, incom_test)
+    vo = getNsave_validout(S, incom_test)
     @assert !isnothing(vo)
     @assert vo.incom_spaces == incom_test
     
     # Call again to verify load works
-    vo_loaded = LurCGT.getNsave_validout(S, incom_test)
+    vo_loaded = getNsave_validout(S, incom_test)
     @assert !isnothing(vo_loaded)
     @assert length(vo_loaded.out_spaces) == length(vo.out_spaces)
     @assert vo_loaded.out_spaces == vo.out_spaces
@@ -852,21 +852,21 @@ function test_hdf5_io(::Type{S}) where {S<:LurCGT.NonabelianSymm}
 end
 
 # Test thread-safe HDF5 access
-function test_hdf5_threadsafety(::Type{S}) where {S<:LurCGT.NonabelianSymm}
-    NZ = LurCGT.nzops(S)
+function test_hdf5_threadsafety(::Type{S}) where {S<:NonabelianSymm}
+    NZ = nzops(S)
     println("Testing thread-safe concurrent access...")
     
     # Generate some test data first using getNsave
     test_qlabels = [ntuple(i -> i <= j ? 1 : 0, NZ) for j in 0:min(3, NZ)]
     for q in test_qlabels
-        LurCGT.getNsave_irep(S, BigInt, q)
+        getNsave_irep(S, BigInt, q)
     end
     
     # Concurrent reads using getNsave (which will load from cache)
     results = Vector{Any}(undef, length(test_qlabels))
     println(Threads.nthreads(), " threads will be used for concurrent reads.")
     Threads.@threads for i in 1:length(test_qlabels)
-        results[i] = LurCGT.getNsave_irep(S, BigInt, test_qlabels[i])
+        results[i] = getNsave_irep(S, BigInt, test_qlabels[i])
     end
     
     # Verify all reads succeeded
@@ -883,13 +883,13 @@ function test_pentagon_randinput(::Type{S},
     ::Type{CT},
     qlimit=3,
     test_inputs=10;
-    verbose=0) where {S<:LurCGT.NonabelianSymm, CT<:AbstractFloat}
+    verbose=0) where {S<:NonabelianSymm, CT<:AbstractFloat}
 
     for i in 1:test_inputs
         println("Pentagon test #$i")
         ins_ = generate_incom(S, 1e10, qlimit)
         @assert length(ins_) >= 4; ins = sort(ins_[1:4])
-        vo = LurCGT.getNsave_validout(S, Tuple(ins))
+        vo = getNsave_validout(S, Tuple(ins))
         out = select_out(vo, 300)
         println("Input spaces: $(ins), Output space: $(out)")
         test_pentagon(S, CT, ins, out; verbose)
@@ -900,9 +900,9 @@ function test_pentagon(::Type{S},
     ::Type{CT},
     ins::Vector{NTuple{NZ, Int}},
     out::NTuple{NZ, Int};
-    verbose=0) where {S<:LurCGT.NonabelianSymm, CT<:AbstractFloat, NZ}
+    verbose=0) where {S<:NonabelianSymm, CT<:AbstractFloat, NZ}
 
-    @assert NZ == LurCGT.nzops(S)
+    @assert NZ == nzops(S)
     @assert length(ins) == 4
     FTree_path1 = LurCGT.random_FTree(S, Tuple(ins), (out,))
     FTree_path2 = copy(FTree_path1)
@@ -923,9 +923,9 @@ function test_pentagon(::Type{S},
     println("Pentagon test passed.")
 end
 
-function compare_FTrees(FTree1::LurCGT.FTree{S, 4},
-    FTree2::LurCGT.FTree{S, 4};
-    verbose=0) where S<:LurCGT.NonabelianSymm
+function compare_FTrees(FTree1::FTree{S, 4},
+    FTree2::FTree{S, 4};
+    verbose=0) where S<:NonabelianSymm
 
     @assert FTree1.ins == FTree2.ins
     @assert FTree1.outs == FTree2.outs
@@ -945,8 +945,8 @@ function compare_FTrees(FTree1::LurCGT.FTree{S, 4},
     end
 end
 
-function change_internal_order(FTree::LurCGT.FTree{S, 4}) where S<:LurCGT.NonabelianSymm
-    NZ = LurCGT.nzops(S)
+function change_internal_order(FTree::FTree{S, 4}) where S<:NonabelianSymm
+    NZ = nzops(S)
     ncoeff = Dict{NTuple{2, NTuple{NZ, Int}}, Array{BigInt, 3}}()
     ncoeff_nfac = Dict{NTuple{2, NTuple{NZ, Int}}, Rational{BigInt}}()
 
@@ -962,43 +962,43 @@ function change_internal_order(FTree::LurCGT.FTree{S, 4}) where S<:LurCGT.Nonabe
     return new_FTree
 end
 
-function path1s1_iofunc(FTree::LurCGT.FTree{S, 4},
+function path1s1_iofunc(FTree::FTree{S, 4},
     rem::NTuple{1, NTuple{NZ, Int}},
-    i::Int) where {S<:LurCGT.NonabelianSymm, NZ}
+    i::Int) where {S<:NonabelianSymm, NZ}
 
-    @assert NZ == LurCGT.nzops(S) && i == 1
+    @assert NZ == nzops(S) && i == 1
     return (rem[1], FTree.ins[3], FTree.ins[4], FTree.outs[1])
 end
 
-function path1s2_iofunc(FTree::LurCGT.FTree{S, 4},
+function path1s2_iofunc(FTree::FTree{S, 4},
     rem::NTuple{1, NTuple{NZ, Int}},
-    i::Int) where {S<:LurCGT.NonabelianSymm, NZ}
+    i::Int) where {S<:NonabelianSymm, NZ}
 
-    @assert NZ == LurCGT.nzops(S) && i == 1
+    @assert NZ == nzops(S) && i == 1
     return (FTree.ins[1], FTree.ins[2], rem[1], FTree.outs[1])
 end
 
-function path2s1_iofunc(FTree::LurCGT.FTree{S, 4},
+function path2s1_iofunc(FTree::FTree{S, 4},
     rem::NTuple{1, NTuple{NZ, Int}},
-    i::Int) where {S<:LurCGT.NonabelianSymm, NZ}
+    i::Int) where {S<:NonabelianSymm, NZ}
 
-    @assert NZ == LurCGT.nzops(S) && i == 2
+    @assert NZ == nzops(S) && i == 2
     return (FTree.ins[1], FTree.ins[2], FTree.ins[3], rem[1])
 end
 
-function path2s2_iofunc(FTree::LurCGT.FTree{S, 4},
+function path2s2_iofunc(FTree::FTree{S, 4},
     rem::NTuple{1, NTuple{NZ, Int}},
-    i::Int) where {S<:LurCGT.NonabelianSymm, NZ}
+    i::Int) where {S<:NonabelianSymm, NZ}
 
-    @assert NZ == LurCGT.nzops(S) && i == 1
+    @assert NZ == nzops(S) && i == 1
     return (FTree.ins[1], rem[1], FTree.ins[4], FTree.outs[1])
 end
 
-function path2s3_iofunc(FTree::LurCGT.FTree{S, 4},
+function path2s3_iofunc(FTree::FTree{S, 4},
     rem::NTuple{1, NTuple{NZ, Int}},
-    i::Int) where {S<:LurCGT.NonabelianSymm, NZ}
+    i::Int) where {S<:NonabelianSymm, NZ}
 
-    @assert NZ == LurCGT.nzops(S) && i == 2
+    @assert NZ == nzops(S) && i == 2
     return (FTree.ins[2], FTree.ins[3], FTree.ins[4], rem[1])
 end
 
@@ -1007,9 +1007,9 @@ function test_Xsym_1j(::Type{S},
     qlimit=4,
     outlimit=200,
     ninput=20;
-    verbose=0) where {S<:LurCGT.NonabelianSymm}
+    verbose=0) where {S<:NonabelianSymm}
 
-    NZ = LurCGT.nzops(S)
+    NZ = nzops(S)
     for i in 1:ninput
         println("Test input #$i")
         spaces = nothing
@@ -1027,7 +1027,7 @@ function test_Xsym_1j(::Type{S},
 
         # Contracted space
         ctsp = out_contracted ? cgt_out[ctleg[1]-NI] : cgt_in[ctleg[1]]
-        dualq = LurCGT.get_dualq(S, ctsp)
+        dualq = get_dualq(S, ctsp)
 
         if ctsp == dualq
             legs_1j = (ctsp, ctsp); ctleg_1j = (rand(1:2),)
@@ -1051,10 +1051,10 @@ function test_Xsym_1j(::Type{S},
             ctlegs1, ctlegs2 = ctleg_1j, ctleg
         end
 
-        Xsym_1j = LurCGT.getNsave_Xsymbol(S, cgt1up, cgt1dn, cgt2up, cgt2dn, 
+        Xsym_1j = getNsave_Xsymbol(S, cgt1up, cgt1dn, cgt2up, cgt2dn, 
         ctlegs1, ctlegs2; verbose=verbose, use1j=true, save=false)
 
-        Xsym_no1j = LurCGT.getNsave_Xsymbol(S, cgt1up, cgt1dn, cgt2up, cgt2dn, 
+        Xsym_no1j = getNsave_Xsymbol(S, cgt1up, cgt1dn, cgt2up, cgt2dn, 
         ctlegs1, ctlegs2; verbose=verbose, use1j=false, save=false)
 
         ndiff = norm(Xsym_no1j.xsym_arr - Xsym_1j.xsym_arr) / norm(Xsym_no1j.xsym_arr)
@@ -1073,7 +1073,7 @@ function get_final_CGTinfo(::Type{S},
     cgt2_outsp::NTuple{NO2, NTuple{NZ, Int}},
     cgt1legs::NTuple{M, Int},
     cgt2legs::NTuple{M, Int},
-    arr3_cont::SparseArray{Float64}) where {S<:LurCGT.NonabelianSymm, NI1, NO1, NI2, NO2, M, NZ}
+    arr3_cont::SparseArray{Float64}) where {S<:NonabelianSymm, NI1, NO1, NI2, NO2, M, NZ}
 
     cgt1_inopen = [cgt1_insp[i] for i in 1:NI1 if !(i in cgt1legs)]
     cgt1_outopen = [cgt1_outsp[i] for i in 1:NO1 if !(i+NI1 in cgt1legs)]
@@ -1100,9 +1100,9 @@ function get_final_CGTinfo(::Type{S},
     cgt3_insp = sort(cgt3_insp); cgt3_outsp = sort(cgt3_outsp)
     if isempty(cgt3_insp) cgt3_insp = [Tuple(0 for _=1:NZ)] end
     if isempty(cgt3_outsp) cgt3_outsp = [Tuple(0 for _=1:NZ)] end
-    cgt3_insp_, _ = LurCGT.remove_zeros(S, Tuple(cgt3_insp))
-    cgt3_outsp_, _ = LurCGT.remove_zeros(S, Tuple(cgt3_outsp))
-    CGT3om = LurCGT.get_CGTom(S, Tuple(cgt3_insp_), Tuple(cgt3_outsp_))
+    cgt3_insp_, _ = remove_zeros(S, Tuple(cgt3_insp))
+    cgt3_outsp_, _ = remove_zeros(S, Tuple(cgt3_outsp))
+    CGT3om = get_CGTom(S, Tuple(cgt3_insp_), Tuple(cgt3_outsp_))
 
     return cgt3_insp, cgt3_outsp, CGT3om, arr3_cont
 end
@@ -1112,9 +1112,9 @@ function test_Xsym(::Type{S},
     qlimit=4,
     outlimit=200,
     ninput=20;
-    verbose=0) where {S<:LurCGT.NonabelianSymm}
+    verbose=0) where {S<:NonabelianSymm}
 
-    NZ = LurCGT.nzops(S)
+    NZ = nzops(S)
     for i in 1:ninput
         println("Test input #$i")
         spaces = nothing
@@ -1134,16 +1134,16 @@ function test_Xsym(::Type{S},
         cgt2_insp = Tuple(cgt2_insp); cgt2_outsp = Tuple(cgt2_outsp)
         cgt1legs = Tuple(cgt1legs); cgt2legs = Tuple(cgt2legs)
 
-        cgt1_insp_, _ = LurCGT.remove_zeros(S, cgt1_insp)
-        cgt1_outsp_, _ = LurCGT.remove_zeros(S, cgt1_outsp)
-        cgt2_insp_, _ = LurCGT.remove_zeros(S, cgt2_insp)
-        cgt2_outsp_, _ = LurCGT.remove_zeros(S, cgt2_outsp)
-        CGTom1 = LurCGT.get_CGTom(S, cgt1_insp_, cgt1_outsp_)
-        CGTom2 = LurCGT.get_CGTom(S, cgt2_insp_, cgt2_outsp_)
+        cgt1_insp_, _ = remove_zeros(S, cgt1_insp)
+        cgt1_outsp_, _ = remove_zeros(S, cgt1_outsp)
+        cgt2_insp_, _ = remove_zeros(S, cgt2_insp)
+        cgt2_outsp_, _ = remove_zeros(S, cgt2_outsp)
+        CGTom1 = get_CGTom(S, cgt1_insp_, cgt1_outsp_)
+        CGTom2 = get_CGTom(S, cgt2_insp_, cgt2_outsp_)
 
         om1, om2 = CGTom1.totalOM, CGTom2.totalOM
-        canbasis1 = LurCGT.get_canonical_basis(S, cgt1_insp, cgt1_outsp, CGTom1; verbose)
-        canbasis2 = LurCGT.get_canonical_basis(S, cgt2_insp, cgt2_outsp, CGTom2; verbose)
+        canbasis1 = get_canonical_basis(S, cgt1_insp, cgt1_outsp, CGTom1; verbose)
+        canbasis2 = get_canonical_basis(S, cgt2_insp, cgt2_outsp, CGTom2; verbose)
         @assert !isempty(canbasis1) && !isempty(canbasis2)
         coeff1, coeff2 = rand(Float64, om1), rand(Float64, om2)
 
@@ -1153,9 +1153,9 @@ function test_Xsym(::Type{S},
         for i in 1:om2 arr2 += coeff2[i] * canbasis2[i] end
 
         # Contract arr1 and arr2
-        arr3_cont = LurCGT.contract_arrs(arr1, arr2, cgt1legs, cgt2legs)
+        arr3_cont = contract_arrs(arr1, arr2, cgt1legs, cgt2legs)
         
-        Xsym = LurCGT.getNsave_Xsymbol(S, cgt1_insp, cgt1_outsp,
+        Xsym = getNsave_Xsymbol(S, cgt1_insp, cgt1_outsp,
         cgt2_insp, cgt2_outsp, cgt1legs, cgt2legs; verbose, save=true)
         if isnothing(Xsym) || iszero(Xsym.xsym_arr)
             # Check if arr3_cont is zero. If yes, test passed
@@ -1170,7 +1170,7 @@ function test_Xsym(::Type{S},
         cgt3_insp, cgt3_outsp, CGTom3, arr3_cont = get_final_CGTinfo(S, 
         cgt1_insp, cgt1_outsp, cgt2_insp, cgt2_outsp, cgt1legs, cgt2legs, arr3_cont)
 
-        canbasis3 = LurCGT.get_canonical_basis(S, Tuple(cgt3_insp), Tuple(cgt3_outsp), CGTom3)
+        canbasis3 = get_canonical_basis(S, Tuple(cgt3_insp), Tuple(cgt3_outsp), CGTom3)
         om3 = CGTom3.totalOM
         @tensor coeff3[i3] := coeff1[i1] * coeff2[i2] * Xsym.xsym_arr[i1, i2, i3]
         arr3_Xsym = SparseArray(zeros(Float64, size(canbasis3[1])))
@@ -1192,10 +1192,10 @@ function test_CGTperm(::Type{S},
     dim_limit=500000,
     qlimit=3,
     ninput=10;
-    verbose=0) where {S<:LurCGT.NonabelianSymm}
+    verbose=0) where {S<:NonabelianSymm}
 
     for i in 1:ninput
-        NZ = LurCGT.nzops(S)
+        NZ = nzops(S)
 
         nrepeat, qrep = nothing, nothing
         cgt_insp, cgt_outsp = nothing, nothing
@@ -1206,7 +1206,7 @@ function test_CGTperm(::Type{S},
         while true
             nrepeat = rand(2:4)
             qrep = Tuple(rand(0:qlimit) for i in 1:NZ)
-            rep_dim = LurCGT.dimension(LurCGT.getNsave_irep(S, BigInt, qrep))
+            rep_dim = LurCGT.dimension(getNsave_irep(S, BigInt, qrep))
 
             rem_dim = div(dim_limit, rep_dim^nrepeat)
             if rem_dim < 100 continue end
@@ -1232,9 +1232,9 @@ function test_CGTperm(::Type{S},
                     cgt_insp, cgt_outsp = Tuple(othside), Tuple(repside)
                 end
                 
-                cgt_insp_, _ = LurCGT.remove_zeros(S, cgt_insp)
-                cgt_outsp_, _ = LurCGT.remove_zeros(S, cgt_outsp)
-                CGTom = LurCGT.get_CGTom(S, cgt_insp_, cgt_outsp_)
+                cgt_insp_, _ = remove_zeros(S, cgt_insp)
+                cgt_outsp_, _ = remove_zeros(S, cgt_outsp)
+                CGTom = get_CGTom(S, cgt_insp_, cgt_outsp_)
                 if CGTom.totalOM > 0 found = true; break end
             end
             if found break end
@@ -1255,7 +1255,7 @@ function test_CGTperm(::Type{S},
         perm_other = collect(1:(repeat_in ? NO : NI))
 
         total_perm = repeat_in ? (perm_repeat..., (perm_other .+ NI)...) : (perm_other..., (perm_repeat .+ NI)...)
-        canbasis = LurCGT.get_canonical_basis(S, cgt_insp, cgt_outsp, CGTom; verbose)
+        canbasis = get_canonical_basis(S, cgt_insp, cgt_outsp, CGTom; verbose)
         @assert !isempty(canbasis); om = CGTom.totalOM
 
         coeff_before = rand(Float64, om)
@@ -1264,7 +1264,7 @@ function test_CGTperm(::Type{S},
 
         arr_perm = permutedims(arr_before, total_perm)
 
-        CGTperm = LurCGT.getNsave_CGTperm(S, cgt_insp, cgt_outsp, total_perm; save=true)
+        CGTperm = getNsave_CGTperm(S, cgt_insp, cgt_outsp, total_perm; save=true)
         println(total_perm)
         if isnothing(CGTperm)
             println("Permutation becomes identity")
@@ -1290,9 +1290,9 @@ function test_CGT_conj(::Type{S},
     qlimit=4,
     outlimit=200,
     ninput=20;
-    verbose=0) where {S<:LurCGT.NonabelianSymm}
+    verbose=0) where {S<:NonabelianSymm}
 
-    NZ = LurCGT.nzops(S)
+    NZ = nzops(S)
     for i in 1:ninput
         spaces = nothing
         while isnothing(spaces) || spaces[1] == spaces[2]
@@ -1306,13 +1306,13 @@ function test_CGT_conj(::Type{S},
 
         println("Test input #$i: CGT $(cgt_in)->$(cgt_out)")
 
-        CGTom = LurCGT.get_CGTom(S, cgt_in, cgt_out)
+        CGTom = get_CGTom(S, cgt_in, cgt_out)
         om = CGTom.totalOM
-        CGTom_conj = LurCGT.get_CGTom(S, cgt_out, cgt_in)
+        CGTom_conj = get_CGTom(S, cgt_out, cgt_in)
         @assert CGTom_conj.totalOM == om
 
-        canbasis = LurCGT.get_canonical_basis(S, cgt_in, cgt_out, CGTom; verbose)
-        canbasis_conj = LurCGT.get_canonical_basis(S, cgt_out, cgt_in, CGTom_conj; verbose)
+        canbasis = get_canonical_basis(S, cgt_in, cgt_out, CGTom; verbose)
+        canbasis_conj = get_canonical_basis(S, cgt_out, cgt_in, CGTom_conj; verbose)
 
         perm = (NI+1:NI+NO..., 1:NI...)
         for j in 1:om
@@ -1328,18 +1328,18 @@ function test_CGT_conj_sameq(::Type{S},
     qlimit=4,
     outlimit=200,
     ninput=20;
-    verbose=0) where {S<:LurCGT.NonabelianSymm}
+    verbose=0) where {S<:NonabelianSymm}
 
-    NZ = LurCGT.nzops(S)
+    NZ = nzops(S)
     for i in 1:ninput
         sps = Tuple(sort(generate_incom(S, dim_limit, qlimit)))
         N = length(sps)
         println("Test input #$i: CGT $(sps) -> $(sps)")
 
-        CGTom = LurCGT.get_CGTom(S, sps, sps)
+        CGTom = get_CGTom(S, sps, sps)
         om = CGTom.totalOM
 
-        canbasis = LurCGT.get_canonical_basis(S, sps, sps, CGTom; verbose)
+        canbasis = get_canonical_basis(S, sps, sps, CGTom; verbose)
         perm_CGT = (N+1:2N..., 1:N...)
         perm_om = LurCGT.get_conj_perm(CGTom)
 
@@ -1350,3 +1350,4 @@ function test_CGT_conj_sameq(::Type{S},
         println("test passed")
     end
 end
+
