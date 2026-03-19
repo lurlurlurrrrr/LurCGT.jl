@@ -9,7 +9,7 @@ using Nemo
 
 include("Base.jl")
 
-export U1, SU, SO, Sp
+export Z, U1, SU, SO, Sp
 export Symmetry, AbelianSymm, NonabelianSymm
 
 export Irep, CGT, Fsymbol, Rsymbol, Xsymbol, CGTperm, CG3Flip

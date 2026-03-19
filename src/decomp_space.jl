@@ -310,7 +310,7 @@ function get_vectors_sector_!(::Val{I},
 end
 
 function reshapeNprod(arr::Array{T, N}, mat::AbstractMatrix{S}) where {T, S, N}
-    @assert N >= 2
+    @assert N >= 1
     res_mat = mat * reshape(arr, size(arr, 1), :)
     return reshape(res_mat, size(mat, 1), size(arr)[2:end]...)
 end
@@ -634,12 +634,17 @@ function get_irops_sector_!(::Val{I},
                                     for i=I+1:N @assert new_size[i] == 1 end
                                     irops_sector[wt] = Array{SparseMatrixCSC{Int}, N}(undef, new_size...)
                                 end
-                                slice = [[Colon() for _=1:I-1]..., j, [1 for _=I+1:N]...]
-                                for idx in CartesianIndices(irops_sector[wtup][slice...])
-                                    idx_init = [idx.I..., j, [1 for _=I+1:N]...]
-                                    idx_final = [idx.I..., nzind, [1 for _=I+1:N]...]
-                                    comm_res = comm(lop, irops_sector[wtup][idx_init...])
-                                    irops_sector[wt][idx_final...] = div.(comm_res, nzval)
+                                if N == 1
+                                    comm_res = comm(lop, irops_sector[wtup][j])
+                                    irops_sector[wt][nzind] = div.(comm_res, nzval)
+                                else
+                                    slice = [[Colon() for _=1:I-1]..., j, [1 for _=I+1:N]...]
+                                    for idx in CartesianIndices(irops_sector[wtup][slice...])
+                                        idx_init = [idx.I..., j, [1 for _=I+1:N]...]
+                                        idx_final = [idx.I..., nzind, [1 for _=I+1:N]...]
+                                        comm_res = comm(lop, irops_sector[wtup][idx_init...])
+                                        irops_sector[wt][idx_final...] = div.(comm_res, nzval)
+                                    end
                                 end
                                 delete!(remaining_set, nzind)
                             end
