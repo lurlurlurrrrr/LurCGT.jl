@@ -77,7 +77,11 @@ function build_process_local_id(env::AbstractDict=ENV;
     return join(parts, "_")
 end
 
-const PROCESS_LOCAL_ID = build_process_local_id()
+const PROCESS_LOCAL_ID = Ref{String}("")
+
+process_local_id() = PROCESS_LOCAL_ID[]
+process_local_id(env::AbstractDict; hostname::AbstractString=gethostname(), pid::Integer=getpid()) =
+    build_process_local_id(env; hostname, pid)
 
 # All table names (created at DB init)
 const SQLITE_TABLES = ("irreps", "cgt", "fsymbol", "rsymbol", "xsymbol",
@@ -121,9 +125,9 @@ function get_sqlite_db(::Type{S}, location::Symbol=:local) where {S<:NonabelianS
                 db
             end
         else
-            db_key = "$(symm_name)_local_$(PROCESS_LOCAL_ID)"
+            db_key = "$(symm_name)_local_$(process_local_id())"
             get!(SQLITE_DBS, db_key) do
-                path = joinpath(homedir(), ".LurCGT_sqlite", "local", symm_name, "$(PROCESS_LOCAL_ID).db")
+                path = joinpath(homedir(), ".LurCGT_sqlite", "local", symm_name, "$(process_local_id()).db")
                 mkpath(dirname(path))
                 db = SQLite.DB(path)
                 _init_sqlite_db(db)
@@ -166,7 +170,7 @@ function save_object_sqlite(::Type{S}, table_name::String, key::String, obj;
     DBInterface.execute(db,
         "INSERT OR REPLACE INTO $(table_name) (key, data) VALUES (?, ?)",
         [key, data])
-    verbose > 0 && println("Saved $(table_name) to local DB ($(PROCESS_LOCAL_ID)): $(key)")
+    verbose > 0 && println("Saved $(table_name) to local DB ($(process_local_id())): $(key)")
     return nothing
 end
 
@@ -528,7 +532,7 @@ function merge_table_to_global(::Type{S}, table_name::String, filter_prefix::Str
 
     mkpidlock(lockpath) do
         if verbose > 0
-            println("Merging $(totxt(S)) $(table_name) from local → global ($(PROCESS_LOCAL_ID))")
+            println("Merging $(totxt(S)) $(table_name) from local → global ($(process_local_id()))")
         end
 
         # Read from local
@@ -637,7 +641,7 @@ end
 
 function sqlite_stats(::Type{S}; location::Symbol=:local) where {S<:NonabelianSymm}
     db = get_sqlite_db(S, location)
-    loc_str = location == :global ? "Global" : "Local ($(PROCESS_LOCAL_ID))"
+    loc_str = location == :global ? "Global" : "Local ($(process_local_id()))"
 
     println("SQLite Statistics for $(totxt(S)) ($loc_str):")
 
@@ -687,4 +691,8 @@ function close_all_sqlite_dbs()
         end
         empty!(SQLITE_DBS)
     end
+end
+
+function __init__()
+    PROCESS_LOCAL_ID[] = build_process_local_id()
 end
