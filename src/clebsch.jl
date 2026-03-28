@@ -459,7 +459,7 @@ function get_multiplet(::Type{S},
 
     if getfull && assertlev > 0
         check_vanishing(output_vectors, sl_prod, output_irep; verbose)
-        println("multiplet $(getqlabel(S, mw)) passed")
+        if verbose > 1 println("multiplet $(getqlabel(S, mw)) passed") end
     end
     return output_vectors
 end
@@ -533,7 +533,7 @@ function check_vanishing(output_vectors::Dict{NTuple{NZ, Int}, Matrix{CT}},
             end
         end
     end
-    println("Passed the vanishing test for all lowering operators")
+    #println("Passed the vanishing test for all lowering operators")
 end
 
 

@@ -110,7 +110,7 @@ function test_irep_numtype(::Type{S}) where {S<:NonabelianSymm}
     else 
         push!(processed, Tuple(0 for _=1:NZ)) 
     end
-    println(processed)
+    #println(processed)
 
     for q in processed
         add_next_qlabels!(S, tobe_processed, tobe_processed_set, processed, q)
@@ -122,7 +122,7 @@ function test_irep_numtype(::Type{S}) where {S<:NonabelianSymm}
             q = imn.qlabel
             delete!(tobe_processed_set, q)
             @info "Processing irep $(totxt(S)), qlabel=$(q), dim=$(imn.dim)"
-            println(imn)
+            #println(imn)
             push!(processed, q)
             push!(v, imn)
             add_next_qlabels!(S, tobe_processed, tobe_processed_set, processed, q)
@@ -144,7 +144,7 @@ function test_irep_numtype(::Type{S},
             @info "Testing irep number type $(totxt(S)), RT=$(totxt(RT)), qlabel=$(qlabel)"
             rep = getNsave_irep(S, RT, qlabel)
             imn = analyze_irep(rep)
-            println(imn)
+            #println(imn)
             if imn.matelem_max > typemax(RT) || 
                imn.innerprod_max > typemax(RT) || 
                imn.inv_innerprod_max > typemax(RT) || 
@@ -175,6 +175,147 @@ function test_cg3_numtype(::Type{S},
             end
         end
     end
+end
+
+all_nonnegative_qlabel(q::NTuple{N, Int}) where {N} = all(x -> x >= 0, q)
+
+function is_valid_int128_sum_slice_qlabel(::Type{S},
+    q::NTuple{NZ, Int}) where {S<:Union{SU, Sp}, NZ}
+    return all_nonnegative_qlabel(q)
+end
+
+function is_valid_int128_sum_slice_qlabel(::Type{SO{N}},
+    q::NTuple{NZ, Int}) where {N, NZ}
+    all_nonnegative_qlabel(q) || return false
+    if isodd(N)
+        return iseven(q[end])
+    end
+    return iseven(q[end - 1] + q[end])
+end
+
+function int128_sum_slice_qlabels(::Type{S},
+    n::Int) where {S<:NonabelianSymm}
+
+    n >= 0 || throw(ArgumentError("sum of qlabel entries must be nonnegative"))
+    NZ = nzops(S)
+    result = NTuple{NZ, Int}[]
+    for comb in list_combinations(NZ, n)
+        q = Tuple(comb)
+        is_valid_int128_sum_slice_qlabel(S, q) || continue
+        push!(result, q)
+    end
+    return sort!(unique!(result))
+end
+
+int128_sum_slice_normalize(n1::Int, n2::Int) = max(n1, n2), min(n1, n2)
+
+function int128_sum_slice_pairs(::Type{S},
+    n1::Int,
+    n2::Int) where {S<:NonabelianSymm}
+
+    n1_, n2_ = int128_sum_slice_normalize(n1, n2)
+    qlabels1 = int128_sum_slice_qlabels(S, n1_)
+    qlabels2 = int128_sum_slice_qlabels(S, n2_)
+    pairs = Set{Tuple{NTuple{nzops(S), Int}, NTuple{nzops(S), Int}}}()
+    for q1 in qlabels1, q2 in qlabels2
+        push!(pairs, minmax(q1, q2))
+    end
+    return sort!(collect(pairs))
+end
+
+function int128_irep_equal_except_size_byte(rep1::Irep, rep2::Irep)
+    return rep1.Sl == rep2.Sl &&
+           rep1.Sz == rep2.Sz &&
+           rep1.innerprod == rep2.innerprod &&
+           rep1.inv_innerprod == rep2.inv_innerprod &&
+           rep1.qlabel == rep2.qlabel &&
+           rep1.dimension == rep2.dimension
+end
+
+function int128_sum_slice_irep_status(::Type{S},
+    q::NTuple{NZ, Int};
+    verbose=0) where {S<:NonabelianSymm, NZ}
+
+    try
+        rep_big = getNsave_irep(S, BigInt, q)
+        rep_i128 = getNsave_irep(S, Int128, q)
+        if int128_irep_equal_except_size_byte(rep_big, rep_i128)
+            return (status=:match, reason="match")
+        end
+        verbose > 0 && println("IREP MISMATCH $(q)")
+        return (status=:mismatch, reason="Int128 and BigInt irreps differ")
+    catch err
+        if err isa AssertionError || err isa OverflowError || err isa InexactError
+            verbose > 0 && println("IREP FAIL $(q): $(typeof(err))")
+            return (status=:error, reason=string(typeof(err)))
+        end
+        rethrow()
+    end
+end
+
+function int128_sum_slice_print_summary(summary)
+    println("Int128 sum-slice summary for $(summary.symmetry) with (n1, n2)=($(summary.n1), $(summary.n2)):")
+    println("  total pairs: $(summary.total_pairs)")
+    println("  passed pairs: $(summary.passed_pairs)")
+    println("  failed pairs: $(summary.failed_pairs)")
+    println("  irep mismatch pairs: $(summary.irep_mismatch_pairs)")
+    println("  CGT failed pairs: $(summary.cgt_failed_pairs)")
+    return nothing
+end
+
+function run_int128_cgt_sum_slice(::Type{S},
+    n1::Int,
+    n2::Int;
+    verbose=1) where {S<:NonabelianSymm}
+
+    n1_, n2_ = int128_sum_slice_normalize(n1, n2)
+    pairs = int128_sum_slice_pairs(S, n1_, n2_)
+    qlabels = sort!(unique!([q for pair in pairs for q in pair]))
+    irep_status = Dict{NTuple{nzops(S), Int}, NamedTuple{(:status, :reason), Tuple{Symbol, String}}}()
+    for q in qlabels
+        irep_status[q] = int128_sum_slice_irep_status(S, q; verbose=max(verbose - 1, 0))
+    end
+
+    results = NamedTuple[]
+    for pair in pairs
+        q1, q2 = pair
+        q1_status = irep_status[q1]
+        q2_status = irep_status[q2]
+        if q1_status.status != :match
+            result = (q1=q1, q2=q2, status=:irep_mismatch, reason="q1: $(q1_status.reason)")
+        elseif q2_status.status != :match
+            result = (q1=q1, q2=q2, status=:irep_mismatch, reason="q2: $(q2_status.reason)")
+        else
+            try
+                generate_every_CGT(S, Int128, Int128, pair, nothing; assertlev=1, save=false)
+                result = (q1=q1, q2=q2, status=:passed, reason="passed")
+            catch err
+                if err isa AssertionError || err isa OverflowError || err isa InexactError
+                    result = (q1=q1, q2=q2, status=:cgt_failed, reason=string(typeof(err)))
+                else
+                    rethrow()
+                end
+            end
+        end
+        push!(results, result)
+        println("($(result.q1), $(result.q2)) => $(result.status): $(result.reason)")
+    end
+
+    failures = [result for result in results if result.status != :passed]
+    summary = (
+        symmetry=totxt(S),
+        n1=n1_,
+        n2=n2_,
+        total_pairs=length(results),
+        passed_pairs=count(result -> result.status == :passed, results),
+        failed_pairs=length(failures),
+        irep_mismatch_pairs=count(result -> result.status == :irep_mismatch, results),
+        cgt_failed_pairs=count(result -> result.status == :cgt_failed, results),
+        results=results,
+        failures=failures,
+    )
+    verbose > 0 && int128_sum_slice_print_summary(summary)
+    return summary
 end
 
 Base.show(io::IO, imn::irep_maxnums) =

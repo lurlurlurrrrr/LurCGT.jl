@@ -34,6 +34,17 @@ end
     @test isabelian(U1)
 end
 
+@testset "CGTSVD tests" begin
+    test_CGTSVD_sameq_randinput(SU{2}, 5000, 5, 100; verbose=0)
+    test_CGTSVD_sameq_randinput(SU{3}, 100000, 2, 50; verbose=0)
+    test_CGTSVD_basischange(SU{2}, 5000, 8, 30; verbose=0)
+    test_CGTSVD_basischange(SU{3}, 20000, 3, 10; verbose=0)
+
+    test_CGTSVD_unitary_randinput(SU{2}, 5000, 8, 30; verbose=0)
+    test_CGTSVD_unitary_randinput(SU{3}, 20000, 3, 10; verbose=0)
+end
+
+
 @testset "declared deps cover imports" begin
     project = TOML.parsefile(joinpath(dirname(@__DIR__), "Project.toml"))
     declared = Set(keys(get(project, "deps", Dict())))
@@ -81,6 +92,7 @@ end
     test_CGT_conj(SU{3}, 500000, 3, 100, 20; verbose=0)
     test_CGT_conj(SU{2}, 5000, 8, 20, 100; verbose=0)
 end
+
 
 # Test pentagon equation for F-symbols
 @testset "F-symbol pentagon equation tests" begin

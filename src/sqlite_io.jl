@@ -45,6 +45,9 @@ const VALIDOUT_CACHE_LOCK = ReentrantLock()
 const CGTPERM_CACHE = LRU{String, Any}(maxsize=20*1024*1024, by=x -> x.size_byte)
 const CGTPERM_CACHE_LOCK = ReentrantLock()
 
+const CGTSVD_CACHE = LRU{String, Any}(maxsize=20*1024*1024, by=x -> x.size_byte)
+const CGTSVD_CACHE_LOCK = ReentrantLock()
+
 const CG3FLIP_CACHE = LRU{String, Any}(maxsize=20*1024*1024, by=x -> x.size_byte)
 const CG3FLIP_CACHE_LOCK = ReentrantLock()
 
@@ -52,7 +55,7 @@ const PROCESS_LOCAL_ID = "proc_$(getpid())"
 
 # All table names (created at DB init)
 const SQLITE_TABLES = ("irreps", "cgt", "fsymbol", "rsymbol", "xsymbol",
-                        "omlist", "validout", "cgtperm", "cg3flip")
+                        "omlist", "validout", "cgtperm", "cgtsvd", "cg3flip")
 
 # ============================================================================
 # Database Management
@@ -264,6 +267,15 @@ function cgtperm_key(::Type{S}, upsp::Tuple, dnsp::Tuple, perm::NTuple{N, Int}) 
     return "cgtperm_$(totxt(S))_$(join(up_strs, "_")),$(join(dn_strs, "_")),$(join(perm, "_"))"
 end
 
+function cgtsvd_key(::Type{S},
+    upsp::NTuple{U, NTuple{NZ, Int}},
+    dnsp::NTuple{D, NTuple{NZ, Int}},
+    leftlegs::NTuple{L, Int}) where {S<:Symmetry, U, D, NZ, L}
+    up_strs = [join(q, "_") for q in upsp]
+    dn_strs = [join(q, "_") for q in dnsp]
+    return "cgtsvd_v2_$(totxt(S))_$(join(up_strs, "_")),$(join(dn_strs, "_")),$(join(leftlegs, "_"))"
+end
+
 function cg3flip_key(::Type{S},
     ::Type{CT},
     incom_spaces::NTuple{2, NTuple{NZ, Int}},
@@ -429,6 +441,26 @@ function load_CGTperm_sqlite(::Type{S},
     verbose=0) where {S<:NonabelianSymm, U, D, N, NZ}
     key = cgtperm_key(S, upsp, dnsp, perm)
     return _cached_load(S, "cgtperm", key, key, CGTPERM_CACHE, CGTPERM_CACHE_LOCK; verbose)
+end
+
+# --- CGTSVD ---
+
+function save_CGTSVD_sqlite(cgtsvd::CGTSVD{S, U, D, L, NZ}; verbose=0) where {S<:NonabelianSymm, U, D, L, NZ}
+    save_CGTSVD_sqlite(S, cgtsvd; verbose)
+end
+
+function save_CGTSVD_sqlite(::Type{S}, cgtsvd; verbose=0) where {S<:NonabelianSymm}
+    key = cgtsvd_key(S, cgtsvd.upsp, cgtsvd.dnsp, cgtsvd.leftlegs)
+    _cached_save(S, "cgtsvd", key, key, cgtsvd, CGTSVD_CACHE, CGTSVD_CACHE_LOCK; verbose)
+end
+
+function load_CGTSVD_sqlite(::Type{S},
+    upsp::NTuple{U, NTuple{NZ, Int}},
+    dnsp::NTuple{D, NTuple{NZ, Int}},
+    leftlegs::NTuple{L, Int};
+    verbose=0) where {S<:NonabelianSymm, U, D, L, NZ}
+    key = cgtsvd_key(S, upsp, dnsp, leftlegs)
+    return _cached_load(S, "cgtsvd", key, key, CGTSVD_CACHE, CGTSVD_CACHE_LOCK; verbose)
 end
 
 # --- CG3flip ---

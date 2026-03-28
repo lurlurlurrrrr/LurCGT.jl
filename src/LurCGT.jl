@@ -12,11 +12,11 @@ include("Base.jl")
 export Z, U1, SU, SO, Sp
 export Symmetry, AbelianSymm, NonabelianSymm
 
-export Irep, CGT, Fsymbol, Rsymbol, Xsymbol, CGTperm, CG3Flip
+export Irep, CGT, Fsymbol, Rsymbol, Xsymbol, CGTperm, CGTSVD, CG3Flip
 export OMList, ValidOuts, FTree
 
 export getNsave_irep, getNsave_cg3, getNsave_Fsymbol, getNsave_Rsymbol
-export getNsave_omlist, getNsave_validout, getNsave_CGTperm, getNsave_Xsymbol, getNsave_1jsym
+export getNsave_omlist, getNsave_validout, getNsave_CGTperm, getNsave_CGTSVD, getNsave_Xsymbol, getNsave_1jsym
 
 export load_cg3_float
 export add_qn, isabelian, nzops, get_dualq, totxt, dimension
