@@ -51,7 +51,33 @@ const CGTSVD_CACHE_LOCK = ReentrantLock()
 const CG3FLIP_CACHE = LRU{String, Any}(maxsize=20*1024*1024, by=x -> x.size_byte)
 const CG3FLIP_CACHE_LOCK = ReentrantLock()
 
-const PROCESS_LOCAL_ID = "proc_$(getpid())"
+function _nonempty_env_value(env::AbstractDict, key::AbstractString)
+    haskey(env, key) || return nothing
+    value = strip(String(env[key]))
+    return isempty(value) ? nothing : value
+end
+
+function build_process_local_id(env::AbstractDict=ENV;
+                                hostname::AbstractString=gethostname(),
+                                pid::Integer=getpid())
+    host_part = replace(String(hostname), r"[^A-Za-z0-9._-]" => "_")
+    parts = String[host_part]
+
+    if (job_id = _nonempty_env_value(env, "SLURM_JOB_ID")) !== nothing
+        push!(parts, "job$(job_id)")
+    end
+
+    if (task_id = _nonempty_env_value(env, "SLURM_ARRAY_TASK_ID")) !== nothing
+        push!(parts, "task$(task_id)")
+    elseif (proc_id = _nonempty_env_value(env, "SLURM_PROCID")) !== nothing
+        push!(parts, "proc$(proc_id)")
+    end
+
+    push!(parts, "pid$(pid)")
+    return join(parts, "_")
+end
+
+const PROCESS_LOCAL_ID = build_process_local_id()
 
 # All table names (created at DB init)
 const SQLITE_TABLES = ("irreps", "cgt", "fsymbol", "rsymbol", "xsymbol",
