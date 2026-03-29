@@ -2,6 +2,8 @@
 #SBATCH --job-name=int128-slice
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
+#SBATCH --qos=medium
+#SBATCH --partition=B1
 
 set -euo pipefail
 

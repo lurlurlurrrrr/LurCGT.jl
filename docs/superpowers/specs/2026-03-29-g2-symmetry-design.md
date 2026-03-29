@@ -96,6 +96,23 @@ Because of that, the first pass should reuse the existing tableau construction u
 
 For `G2`, the highest-weight tableau for `qlabel = (a, b)` must use shape `[a + b, b]` with columns `[1]` and `[1, 2]`. The entries must strictly increase within each column, so the implementation should treat `[1, 2]` as the two-box maximal column rather than `[2, 1]`.
 
+## Alternating-Product Requirement
+
+The original design assumed the shared `def_altprod` implementation was already sufficient. During validation, the `G2` path exposed a limitation in that helper:
+- it assumes every source weight space is one-dimensional
+- it assumes every lowering matrix element is exactly `1`
+- it hard-codes the alternating-product inner product to the identity
+
+That is not sufficient for `G2`, because the defining representation already has a non-unit lowering matrix element in the `f1` chain, and future callers may provide source bases with diagonal but non-identity inner products.
+
+So this feature includes a narrow shared fix in `src/irep.jl`:
+- generalize `def_altprod` to work with source weight spaces of arbitrary block length
+- read the actual lowering matrix entries from the source representation instead of converting them to a presence-only map
+- require only that each source inner-product block is diagonal
+- build the alternating-product inner product as a diagonal matrix whose entries are products of the source diagonal entries
+
+The basis of `Λ^n(V)` will stay the same conceptual basis as before: sorted `n`-tuples of global source basis indices, interpreted as wedge basis vectors. The lowering action is computed by applying the source lowering matrix to each factor, discarding duplicate-index terms, and adding the reordering sign from restoring sorted order.
+
 ## Fundamental Irreps
 
 The shared `get_fundamental_ireps` path saves:
@@ -137,7 +154,11 @@ Add a focused `G2` testset to `test/runtests.jl` that covers:
 - `dimension(getNsave_irep(G2, BigInt, (1, 0))) == 7`
 - `dimension(getNsave_irep(G2, BigInt, (0, 1))) == 14`
 
-5. Dimension regression:
+5. Alternating-product regression:
+- directly inspect the `Λ²(7)` lowering block from weight `(1, 1)` to `(-1, 1)` and verify that the coefficient coming from lowering `0 -> -3` is `2`
+- verify that a custom diagonal defining-space inner product induces diagonal alternating-product norms given by products of source norms
+
+6. Dimension regression:
 - enumerate all nonnegative `qlabel = (a, b)` whose Weyl-dimension value is at most `13090`
 - assert the sorted list of computed irrep dimensions matches exactly:
 

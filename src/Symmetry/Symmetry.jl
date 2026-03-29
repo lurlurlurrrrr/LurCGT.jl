@@ -7,11 +7,13 @@ abstract type U1 <: AbelianSymm end
 abstract type SU{N} <: NonabelianSymm end
 abstract type Sp{N} <: NonabelianSymm end
 abstract type SO{N} <: NonabelianSymm end
+abstract type G2 <: NonabelianSymm end
 
 include("abelian.jl")
 include("SU.jl")
 include("Sp.jl")
 include("SO.jl")
+include("G2.jl")
 
 isabelian(::Type{<:AbelianSymm}) = true
 isabelian(::Type{<:NonabelianSymm}) = false

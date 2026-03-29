@@ -299,6 +299,7 @@ function run_int128_cgt_sum_slice(::Type{S},
         end
         push!(results, result)
         println("($(result.q1), $(result.q2)) => $(result.status): $(result.reason)")
+        GC.gc()
     end
 
     failures = [result for result in results if result.status != :passed]

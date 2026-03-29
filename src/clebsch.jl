@@ -1169,8 +1169,10 @@ function get_linear_coeff(v::Vector{RT},
             if uniqind != 0
                 if verbose > 1 println("Found unique nonzero index $(uniqind) in basis vector $(i)") end
                 # Get the coefficient of the basis vector
-                # TODO: handle the case if the coefficient is not integer
-                @assert v[uniqind] % basis[uniqind, i] == 0 
+                # If divisibility fails, fall back to the general linear solver below.
+                if v[uniqind] % basis[uniqind, i] != 0
+                    continue
+                end
                 coeffs[i] = div(v[uniqind], basis[uniqind, i])
                 
                 v -= coeffs[i] * basis[:, i]

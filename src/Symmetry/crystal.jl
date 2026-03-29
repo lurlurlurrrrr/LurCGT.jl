@@ -13,6 +13,8 @@ struct Crystal_ops{S<:NonabelianSymm}
     ϵ::Dict{Tuple{Int, Int}, Int} # maximal apply number for raising operators
 end
 
+is_valid_tableau(::Tableau{S}) where {S<:NonabelianSymm} = true
+
 function mw_tableau_qlabel(::Type{S}, qlabel::NTuple{NZ, Int}) where {S<:NonabelianSymm, NZ}
     @assert NZ == nlops(S)
     shape = Tableau_shape_from_qlabel(S, collect(qlabel))
@@ -132,7 +134,12 @@ function apply_lowering!(tab::Tableau{S},
         end
     end
     if !haskey(f[opi], colread[max_ind]) return false end
-    colread[max_ind] = f[opi][colread[max_ind]]
+    oldval = colread[max_ind]
+    colread[max_ind] = f[opi][oldval]
+    if !is_valid_tableau(tab)
+        colread[max_ind] = oldval
+        return false
+    end
     return true
 end
 

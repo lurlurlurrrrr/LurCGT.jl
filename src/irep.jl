@@ -111,33 +111,17 @@ end
 
 # Get the alternating product representation of the defining representation
 # The first argument is always the defining representation
+# TODO: Read the code and check if this is working correctly
+# For SU(3), it works correctly
 function def_altprod(irep::Irep{S, NL, NZ, RT}, n::Int) where {S, NL, NZ, RT}
-    # dimension of the original representation
     d_orig = dimension(irep)
-    Sz_orig = sorted_zvals(irep.Sz)
-    # Is it defining representation?
+    @assert 1 <= n <= d_orig
     @assert irep.qlabel == ntuple(i -> i == 1 ? 1 : 0, NZ)
 
-    # Get a basis of alternating product space and weight of them
-    # TODO: For other kind of symmetry such as Sp(2n), this should be generalized
-    new_basis = collect(combinations(1:d_orig, n))
-    weight_dict = Dict{NTuple{NZ, Int}, Vector{Vector{Int}}}()
-    norm2s_new = RT[]
-
-    Sl_numform = get_Sl_numform(irep)
-
-    for nb in new_basis
-        newnorm = RT(1)
-        new_zval = NTuple{NZ, Int}(0 for _ in 1:NZ)
-        for bidx in nb
-            new_zval = new_zval .+ Sz_orig[bidx]  # accumulate z-operator values
-        end
-        if !haskey(weight_dict, new_zval)
-            weight_dict[new_zval] = Vector{Vector{Int}}()
-        end
-        push!(weight_dict[new_zval], nb)
-        push!(norm2s_new, newnorm)
-    end
+    basis_weight, basis_local_idx, basis_norm2, local_to_global =
+        get_altprod_basis_metadata(irep)
+    weight_dict, basis_norms = build_altprod_basis(basis_weight, basis_norm2, n)
+    basis_lookup = get_altprod_basis_lookup(weight_dict)
 
     Sz_new = Dict{NTuple{NZ, Int}, Tuple{Int, Int}}()
     zlst = sorted_zvals(weight_dict)
@@ -149,88 +133,180 @@ function def_altprod(irep::Irep{S, NL, NZ, RT}, n::Int) where {S, NL, NZ, RT}
         Sz_new[k] = (nd, nd + nstates - 1)
         nd += nstates
     end
-
-    display(Sz_new)
-    
-    # Get new lowering operator of the new representation
-    Sl_new = Tuple(Dict{NTuple{NZ, Int}, SparseMatrixCSC{RT}}() for _=1:NL)
-    for lop=1:NZ
-        op_numform = Sl_numform[lop]
-        dz = getdz(S, lop) # Get the change of weight for the i-th lowering op
-        # For each weight of resulting representation
-        for ow in keys(weight_dict) # old weight
-            # Get the basis corresponding to the weight
-            nstates = length(weight_dict[ow])
-            nw = ow .- dz  # new weight
-            if !haskey(weight_dict, nw) continue end
-
-            m, n = length(weight_dict[nw]), length(weight_dict[ow])
-            spmat = spzeros(RT, m, n)
-            for (i, obasis) in enumerate(weight_dict[ow])
-                for (j, nbasis) in enumerate(weight_dict[nw])
-                    spmat[j, i] = get_matelem(op_numform, obasis, nbasis)
-                    # If nbasis can be obtained from obasis by applying lowering operator,
-                end
-            end
-            Sl_new[lop][ow] = spmat
-        end
-    end
-    inner_prod = get_identity_innerprod(S, RT, Sz_new)
+    Sl_new = build_altprod_lowering(
+        irep,
+        weight_dict,
+        basis_lookup,
+        basis_weight,
+        basis_local_idx,
+        local_to_global,
+    )
+    inner_prod = build_altprod_innerprod(basis_norms)
     return Sl_new, Sz_new, mw, inner_prod
 end
 
-# Assume that rep is defining representation
-function get_Sl_numform(rep::Irep{S, NL, NZ, RT}) where {S<:NonabelianSymm, NL, NZ, RT}
-    Sl_numform = Vector{Dict{Int, Int}}()
-    for lop=1:NL
-        dz = getdz(S, lop)
-        dict_op = Dict{Int, Int}()
-        for (ow, v) in rep.Sl[lop]
-            # Assume all weight space is one-dimensional
-            i1, i2 = rep.Sz[ow]; @assert i1 == i2
-            # Assume that the matrix is 1*1, and its element is 1
-            @assert size(v, 1) == 1 && size(v, 2) == 1 && v[1, 1] == 1
-            nw = ow .- dz
-            j1, j2 = rep.Sz[nw]; @assert j1 == j2
-            dict_op[i1] = j1
+function get_altprod_basis_metadata(irep::Irep{S, NL, NZ, RT}) where {S<:NonabelianSymm, NL, NZ, RT}
+    d_orig = dimension(irep)
+    basis_weight = Vector{NTuple{NZ, Int}}(undef, d_orig)
+    basis_local_idx = Vector{Int}(undef, d_orig)
+    basis_norm2 = Vector{RT}(undef, d_orig)
+    local_to_global = Dict{NTuple{NZ, Int}, Vector{Int}}()
+
+    for z in sorted_zvals(irep.Sz)
+        a, b = irep.Sz[z]
+        diag_entries = get_diagonal_entries(irep.innerprod[z])
+        @assert length(diag_entries) == b - a + 1
+        local_to_global[z] = collect(a:b)
+        for (local_idx, global_idx) in enumerate(a:b)
+            basis_weight[global_idx] = z
+            basis_local_idx[global_idx] = local_idx
+            basis_norm2[global_idx] = diag_entries[local_idx]
         end
-        push!(Sl_numform, dict_op)
     end
-    return Sl_numform
+
+    return basis_weight, basis_local_idx, basis_norm2, local_to_global
 end
 
-function get_matelem(op_numform::Dict{Int, Int}, 
-        obasis::Vector{Int}, 
-        nbasis::Vector{Int})
-    # Check if nbasis can be obtained from obasis by applying lowering operator
-    # The elements of obasis and nbasis are all distinct
-    @assert length(obasis) == length(nbasis)
-    s1 = Set(obasis); s2 = Set(nbasis)
-    s12 = setdiff(s1, s2); s21 = setdiff(s2, s1)
-    if length(s12) != 1 || length(s21) != 1 return 0 end
-
-    a, b = first(s12), first(s21)
-    if get(op_numform, a, -1) != b return 0 end
-
-    i = findfirst(x -> x == a, obasis)
-    obasis_copy = obasis[:]
-    obasis_copy[i] = b  # replace a with b
-    perm = sortperm(obasis_copy)
-    return permutation_sign(perm)
+function get_diagonal_entries(mat::Matrix{RT}) where RT
+    @assert size(mat, 1) == size(mat, 2)
+    diag_entries = Vector{RT}(undef, size(mat, 1))
+    for j in axes(mat, 2), i in axes(mat, 1)
+        if i == j
+            diag_entries[i] = mat[i, j]
+        else
+            @assert iszero(mat[i, j])
+        end
+    end
+    return diag_entries
 end
 
-# What element is different between two vectors
-# The output is three numbers i, a, b
-# i is the index of the element in v1 that is not in v2
-# a is the element of v1 that is not in v2
-# b is the element of v2 that is not in v1
-function find_diff(v1::Vector{Int}, v2::Vector{Int})
-    s1 = Set(v1); s2 = Set(v2)
-    s12 = setdiff(s1, s2)
-    s21 = setdiff(s2, s1)
-    @assert length(s12) == 1 && length(s21) == 1
-    a, b = first(s12), first(s21)
-    return findfirst(x -> x == a, v1), a, b
+function build_altprod_basis(
+    basis_weight::Vector{NTuple{NZ, Int}},
+    basis_norm2::Vector{RT},
+    n::Int,
+) where {NZ, RT}
+    weight_dict = Dict{NTuple{NZ, Int}, Vector{Vector{Int}}}()
+    basis_norms = Dict{NTuple{NZ, Int}, Vector{RT}}()
+
+    for nb in combinations(1:length(basis_weight), n)
+        new_zval = ntuple(_ -> 0, NZ)
+        new_norm = one(RT)
+        for bidx in nb
+            new_zval = new_zval .+ basis_weight[bidx]
+            new_norm *= basis_norm2[bidx]
+        end
+        if !haskey(weight_dict, new_zval)
+            weight_dict[new_zval] = Vector{Vector{Int}}()
+            basis_norms[new_zval] = RT[]
+        end
+        push!(weight_dict[new_zval], collect(nb))
+        push!(basis_norms[new_zval], new_norm)
+    end
+
+    return weight_dict, basis_norms
+end
+
+function get_altprod_basis_lookup(weight_dict::Dict{NTuple{NZ, Int}, Vector{Vector{Int}}}) where NZ
+    basis_lookup = Dict{NTuple{NZ, Int}, Dict{Tuple{Vararg{Int}}, Int}}()
+    for (z, basis_vecs) in weight_dict
+        basis_lookup[z] = Dict(Tuple(basis) => i for (i, basis) in enumerate(basis_vecs))
+    end
+    return basis_lookup
+end
+
+function build_altprod_lowering(
+    irep::Irep{S, NL, NZ, RT},
+    weight_dict::Dict{NTuple{NZ, Int}, Vector{Vector{Int}}},
+    basis_lookup::Dict{NTuple{NZ, Int}, Dict{Tuple{Vararg{Int}}, Int}},
+    basis_weight::Vector{NTuple{NZ, Int}},
+    basis_local_idx::Vector{Int},
+    local_to_global::Dict{NTuple{NZ, Int}, Vector{Int}},
+) where {S<:NonabelianSymm, NL, NZ, RT}
+    Sl_new = Tuple(Dict{NTuple{NZ, Int}, SparseMatrixCSC{RT}}() for _=1:NL)
+
+    for lop in 1:NL
+        dz = getdz(S, lop)
+        for (ow, old_basis_vecs) in weight_dict
+            nw = ow .- dz
+            haskey(weight_dict, nw) || continue
+            mat = spzeros(RT, length(weight_dict[nw]), length(old_basis_vecs))
+            row_lookup = basis_lookup[nw]
+            for (col, obasis) in enumerate(old_basis_vecs)
+                coeffs = get_altprod_column(
+                    irep,
+                    lop,
+                    dz,
+                    obasis,
+                    row_lookup,
+                    basis_weight,
+                    basis_local_idx,
+                    local_to_global,
+                )
+                for (row, coeff) in coeffs
+                    mat[row, col] = coeff
+                end
+            end
+            Sl_new[lop][ow] = mat
+        end
+    end
+
+    return Sl_new
+end
+
+function get_altprod_column(
+    irep::Irep{S, NL, NZ, RT},
+    lop::Int,
+    dz::NTuple{NZ, Int},
+    obasis::Vector{Int},
+    row_lookup::Dict{Tuple{Vararg{Int}}, Int},
+    basis_weight::Vector{NTuple{NZ, Int}},
+    basis_local_idx::Vector{Int},
+    local_to_global::Dict{NTuple{NZ, Int}, Vector{Int}},
+) where {S<:NonabelianSymm, NL, NZ, RT}
+    coeffs = Dict{Int, RT}()
+
+    for pos in eachindex(obasis)
+        src_global = obasis[pos]
+        src_weight = basis_weight[src_global]
+        haskey(irep.Sl[lop], src_weight) || continue
+
+        op_block = irep.Sl[lop][src_weight]
+        target_weight = src_weight .- dz
+        haskey(local_to_global, target_weight) || continue
+
+        src_local = basis_local_idx[src_global]
+        target_globals = local_to_global[target_weight]
+        @assert size(op_block, 1) == length(target_globals)
+        @assert size(op_block, 2) >= src_local
+
+        for target_local in eachindex(target_globals)
+            coeff = op_block[target_local, src_local]
+            iszero(coeff) && continue
+
+            new_basis = copy(obasis)
+            new_basis[pos] = target_globals[target_local]
+            length(unique(new_basis)) == length(new_basis) || continue
+
+            perm = sortperm(new_basis)
+            sorted_basis = new_basis[perm]
+            row = row_lookup[Tuple(sorted_basis)]
+            coeffs[row] = get(coeffs, row, zero(RT)) + coeff * RT(permutation_sign(perm))
+        end
+    end
+
+    return coeffs
+end
+
+function build_altprod_innerprod(basis_norms::Dict{NTuple{NZ, Int}, Vector{RT}}) where {NZ, RT}
+    inner_prod = Dict{NTuple{NZ, Int}, Matrix{RT}}()
+    for (z, norms) in basis_norms
+        mat = zeros(RT, length(norms), length(norms))
+        for i in eachindex(norms)
+            mat[i, i] = norms[i]
+        end
+        inner_prod[z] = mat
+    end
+    return inner_prod
 end
 
 function Base.show(io::IO, rep::Irep{S}) where {S<:Symmetry}
