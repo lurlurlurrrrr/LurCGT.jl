@@ -85,7 +85,7 @@ So `getqlabel(G2, (z1, z2))` must assert that `z2 - z1` is even and return `(z1,
 
 ## Tableau / Crystal Construction
 
-The current rank-2 tableau shape builder in `src/Symmetry/crystal.jl` already converts `qlabel = (a, b)` into shape `[a + b, b]`, which matches the intended `SU(3)`-style highest-weight tableau layout mentioned in the requirements.
+The current rank-2 tableau shape builder in `src/Symmetry/crystal.jl` already converts `qlabel = (a, b)` into shape `[a + b, b]`, which matches the intended highest-weight tableau shape.
 
 Because of that, the first pass should reuse the existing tableau construction unchanged and only provide `G2` implementations for:
 - `charlist`
@@ -94,7 +94,7 @@ Because of that, the first pass should reuse the existing tableau construction u
 - `mw_column`
 - `less_weight`
 
-`mw_column(G2, l)` should match the same column convention used for the rank-2 classical groups so that the highest-weight tableau for shape `[a + b, b]` is built from columns `[1]` and `[2, 1]`.
+For `G2`, the highest-weight tableau for `qlabel = (a, b)` must use shape `[a + b, b]` with columns `[1]` and `[1, 2]`. The entries must strictly increase within each column, so the implementation should treat `[1, 2]` as the two-box maximal column rather than `[2, 1]`.
 
 ## Fundamental Irreps
 
