@@ -83,3 +83,34 @@ end
         end
     end
 end
+
+@testset "fixedint plot cells stay separated by numtype" begin
+    mktempdir() do tmp
+        summary64 = (
+            numtype=LurCGT.totxt(Int64),
+            symmetry=LurCGT.totxt(SU{2}),
+            dim_range1=(1, 4),
+            dim_range2=(1, 4),
+            total_pairs=1,
+            passed_pairs=1,
+            failed_pairs=0,
+            results=[(q1=(0,), dim1=1, q2=(1,), dim2=2, status=:passed, reason="passed")],
+        )
+        summary128 = (
+            numtype=LurCGT.totxt(Int128),
+            symmetry=LurCGT.totxt(SU{2}),
+            dim_range1=(1, 4),
+            dim_range2=(1, 4),
+            total_pairs=1,
+            passed_pairs=1,
+            failed_pairs=0,
+            results=[(q1=(0,), dim1=1, q2=(2,), dim2=3, status=:passed, reason="passed")],
+        )
+
+        serialize(LurCGT.fixedint_chunk_result_path(SU{2}, Int64, (1, 4), (1, 4); base_dir=tmp), summary64)
+        serialize(LurCGT.fixedint_chunk_result_path(SU{2}, Int128, (1, 4), (1, 4); base_dir=tmp), summary128)
+
+        @test LurCGT.collect_fixedint_plot_cells(SU{2}, Int64; base_dir=tmp) == [(dim1=1, dim2=2, status=:passed)]
+        @test LurCGT.collect_fixedint_plot_cells(SU{2}, Int128; base_dir=tmp) == [(dim1=1, dim2=3, status=:passed)]
+    end
+end
