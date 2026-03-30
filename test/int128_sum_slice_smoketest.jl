@@ -27,10 +27,11 @@ end
 end
 
 @testset "Int128 sum-slice quiet output" begin
-    output = sprint() do io
-        redirect_stdout(io) do
-            LurCGT.run_int128_cgt_sum_slice(SU{2}, 1, 1; verbose=0)
-        end
+    pipe = Pipe()
+    redirect_stdout(pipe) do
+        LurCGT.run_int128_cgt_sum_slice(SU{2}, 1, 1; verbose=0)
     end
+    close(pipe.in)
+    output = read(pipe, String)
     @test !occursin("Dict{Tuple", output)
 end
