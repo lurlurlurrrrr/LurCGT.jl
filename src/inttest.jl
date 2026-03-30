@@ -323,3 +323,249 @@ Base.show(io::IO, imn::irep_maxnums) =
     print(io, "irep_maxnums(qlabel:$(imn.qlabel), dim:$(imn.dim), 
     Sl:$(imn.matelem_max), inprod:$(imn.innerprod_max), 
     inv_inprod:$(imn.inv_innerprod_max), inv_inprod_fac:$(imn.inv_innerprod_fac_max))")
+
+fixedint_default_base_dir() = normpath(joinpath(@__DIR__, "..", "test", "fixedint_data"))
+
+function fixedint_data_dir(::Type{S},
+    ::Type{RT};
+    base_dir=fixedint_default_base_dir()) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}}
+    return joinpath(base_dir, totxt(RT), totxt(S))
+end
+
+function fixedint_catalog_path(::Type{S},
+    ::Type{RT};
+    base_dir=fixedint_default_base_dir()) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}}
+    dir = fixedint_data_dir(S, RT; base_dir=base_dir)
+    mkpath(dir)
+    return joinpath(dir, "catalog.jls")
+end
+
+function fixedint_chunk_result_path(::Type{S},
+    ::Type{RT},
+    range1::Tuple{Int, Int},
+    range2::Tuple{Int, Int};
+    base_dir=fixedint_default_base_dir()) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}}
+    dir = joinpath(fixedint_data_dir(S, RT; base_dir=base_dir), "chunks")
+    mkpath(dir)
+    return joinpath(dir, "$(range1[1])_$(range1[2])__$(range2[1])_$(range2[2]).jls")
+end
+
+function fixedint_irep_equal_except_size_byte(rep1::Irep, rep2::Irep)
+    return rep1.Sl == rep2.Sl &&
+           rep1.Sz == rep2.Sz &&
+           rep1.innerprod == rep2.innerprod &&
+           rep1.inv_innerprod == rep2.inv_innerprod &&
+           rep1.qlabel == rep2.qlabel &&
+           rep1.dimension == rep2.dimension
+end
+
+function fixedint_irep_status(::Type{S},
+    ::Type{RT},
+    q::NTuple{NZ, Int};
+    verbose=0) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}, NZ}
+
+    rep_big = getNsave_irep(S, BigInt, q)
+    try
+        rep_rt = getNsave_irep(S, RT, q)
+        if fixedint_irep_equal_except_size_byte(rep_big, rep_rt)
+            return (status=:accepted, dim=rep_big.dimension, reason="match")
+        end
+        verbose > 0 && println("IREP MISMATCH $(q)")
+        return (status=:rejected, dim=rep_big.dimension, reason="$(totxt(RT)) and BigInt irreps differ")
+    catch err
+        if err isa AssertionError || err isa OverflowError || err isa InexactError
+            verbose > 0 && println("IREP FAIL $(q): $(typeof(err))")
+            return (status=:rejected, dim=rep_big.dimension, reason=string(typeof(err)))
+        end
+        rethrow()
+    end
+end
+
+function load_fixedint_catalog(::Type{S},
+    ::Type{RT};
+    base_dir=fixedint_default_base_dir()) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}}
+    path = fixedint_catalog_path(S, RT; base_dir=base_dir)
+    if !isfile(path)
+        return (
+            numtype=totxt(RT),
+            symmetry=totxt(S),
+            version=1,
+            accepted=NamedTuple[],
+            scanned=Dict{NTuple{nzops(S), Int}, NamedTuple{(:status, :dim, :reason), Tuple{Symbol, Int, String}}}(),
+        )
+    end
+    return deserialize(path)
+end
+
+function save_fixedint_catalog(::Type{S},
+    ::Type{RT},
+    catalog;
+    base_dir=fixedint_default_base_dir()) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}}
+    serialize(fixedint_catalog_path(S, RT; base_dir=base_dir), catalog)
+    return catalog
+end
+
+function update_fixedint_irrep_catalog(::Type{S},
+    ::Type{RT};
+    maxdim::Int,
+    maxcount=nothing,
+    save=true,
+    base_dir=fixedint_default_base_dir(),
+    verbose=0) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}}
+
+    NZ = nzops(S)
+    trivial_q = ntuple(_ -> 0, NZ)
+    catalog = load_fixedint_catalog(S, RT; base_dir=base_dir)
+    scanned = copy(catalog.scanned)
+    accepted = Dict(entry.qlabel => entry for entry in catalog.accepted)
+
+    if !haskey(scanned, trivial_q)
+        trivial_status = fixedint_irep_status(S, RT, trivial_q; verbose=verbose)
+        scanned[trivial_q] = trivial_status
+        if trivial_status.status == :accepted
+            accepted[trivial_q] = (qlabel=trivial_q, dim=trivial_status.dim)
+        end
+    end
+
+    processed = Set(keys(scanned))
+    pending = BinaryMinHeap{irep_maxnums{S, NZ}}()
+    pending_set = Set{NTuple{NZ, Int}}()
+    for q in processed
+        add_next_qlabels!(S, pending, pending_set, processed, q)
+    end
+
+    tested = 0
+    while !isempty(pending)
+        maxcount !== nothing && tested >= maxcount && break
+
+        candidate = pop!(pending)
+        q = candidate.qlabel
+        delete!(pending_set, q)
+        haskey(scanned, q) && continue
+        candidate.dim > maxdim && continue
+
+        status = fixedint_irep_status(S, RT, q; verbose=verbose)
+        scanned[q] = status
+        if status.status == :accepted
+            accepted[q] = (qlabel=q, dim=status.dim)
+        end
+        push!(processed, q)
+        add_next_qlabels!(S, pending, pending_set, processed, q)
+        tested += 1
+    end
+
+    new_catalog = (
+        numtype=totxt(RT),
+        symmetry=totxt(S),
+        version=1,
+        accepted=sort!(collect(values(accepted)); by=entry -> (entry.dim, entry.qlabel)),
+        scanned=scanned,
+    )
+    save && save_fixedint_catalog(S, RT, new_catalog; base_dir=base_dir)
+    return new_catalog
+end
+
+function fixedint_dimension_chunks(dmin::Int, dmax::Int, m::Int)
+    dmin <= dmax || throw(ArgumentError("dimension min must be <= max"))
+    m > 0 || throw(ArgumentError("chunk count must be positive"))
+    len = dmax - dmin + 1
+    ranges = Tuple{Int, Int}[]
+    for i in 0:m-1
+        lo = dmin + fld(i * len, m)
+        hi = dmin + fld((i + 1) * len, m) - 1
+        lo <= hi && push!(ranges, (lo, hi))
+    end
+    return ranges
+end
+
+function fixedint_canonical_pairs(entries1, entries2)
+    pairs = NamedTuple[]
+    for entry1 in entries1, entry2 in entries2
+        entry1.dim > entry2.dim && continue
+        entry1.dim == entry2.dim && entry1.qlabel > entry2.qlabel && continue
+        push!(pairs, (q1=entry1.qlabel, dim1=entry1.dim, q2=entry2.qlabel, dim2=entry2.dim))
+    end
+    return sort!(pairs; by=pair -> (pair.dim1, pair.dim2, pair.q1, pair.q2))
+end
+
+function run_fixedint_cgt_chunk(::Type{S},
+    ::Type{RT},
+    d1min::Int,
+    d1max::Int,
+    d2min::Int,
+    d2max::Int,
+    m1::Int,
+    m2::Int,
+    chunk1::Int,
+    chunk2::Int;
+    base_dir=fixedint_default_base_dir(),
+    save=true,
+    verbose=1) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}}
+
+    catalog = update_fixedint_irrep_catalog(
+        S,
+        RT;
+        maxdim=max(d1max, d2max),
+        base_dir=base_dir,
+        save=true,
+        verbose=max(verbose - 1, 0),
+    )
+    ranges1 = fixedint_dimension_chunks(d1min, d1max, m1)
+    ranges2 = fixedint_dimension_chunks(d2min, d2max, m2)
+    range1 = ranges1[chunk1]
+    range2 = ranges2[chunk2]
+
+    entries1 = [entry for entry in catalog.accepted if range1[1] <= entry.dim <= range1[2]]
+    entries2 = [entry for entry in catalog.accepted if range2[1] <= entry.dim <= range2[2]]
+    pairs = fixedint_canonical_pairs(entries1, entries2)
+
+    results = map(pairs) do pair
+        try
+            generate_every_CGT(S, RT, RT, (pair.q1, pair.q2), nothing; assertlev=1, save=false)
+            merge(pair, (status=:passed, reason="passed"))
+        catch err
+            if err isa AssertionError || err isa OverflowError || err isa InexactError
+                merge(pair, (status=:cgt_failed, reason=string(typeof(err))))
+            else
+                rethrow()
+            end
+        end
+    end
+
+    summary = (
+        numtype=totxt(RT),
+        symmetry=totxt(S),
+        dim_range1=range1,
+        dim_range2=range2,
+        total_pairs=length(results),
+        passed_pairs=count(result -> result.status == :passed, results),
+        failed_pairs=count(result -> result.status != :passed, results),
+        results=results,
+    )
+
+    save && serialize(fixedint_chunk_result_path(S, RT, range1, range2; base_dir=base_dir), summary)
+    return summary
+end
+
+function collect_fixedint_plot_cells(::Type{S},
+    ::Type{RT};
+    base_dir=fixedint_default_base_dir()) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}}
+    chunk_dir = joinpath(fixedint_data_dir(S, RT; base_dir=base_dir), "chunks")
+    isdir(chunk_dir) || return NamedTuple[]
+
+    status_by_cell = Dict{Tuple{Int, Int}, Symbol}()
+    for file in readdir(chunk_dir; join=true)
+        endswith(file, ".jls") || continue
+        chunk = deserialize(file)
+        for result in chunk.results
+            key = (result.dim1, result.dim2)
+            current = get(status_by_cell, key, :passed)
+            status_by_cell[key] = current == :passed && result.status == :passed ? :passed : :failed
+        end
+    end
+
+    return sort!(
+        [(dim1=key[1], dim2=key[2], status=status) for (key, status) in status_by_cell];
+        by=cell -> (cell.dim1, cell.dim2),
+    )
+end

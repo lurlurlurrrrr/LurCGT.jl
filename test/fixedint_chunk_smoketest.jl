@@ -25,8 +25,8 @@ end
         (q1=(1, 0), dim1=3, q2=(1, 0), dim2=3),
         (q1=(0, 1), dim1=3, q2=(0, 2), dim2=6),
         (q1=(1, 0), dim1=3, q2=(0, 2), dim2=6),
-        (q1=(2, 0), dim1=6, q2=(0, 2), dim2=6),
     ]
+    @test !any(pair -> pair.q1 == (2, 0) && pair.q2 == (0, 2), pairs)
 end
 
 @testset "fixedint chunk path tokens" begin

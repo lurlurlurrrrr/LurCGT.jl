@@ -26,5 +26,9 @@ export FTree2arr, contract_arrs, get_canonical_basis
 export decompose_space, get_IROP, decompose_irop
 export remove_zeros, get_CGTom
 export detect_1j, get_conj_perm, transf_basis!
+export update_fixedint_irrep_catalog, fixedint_dimension_chunks
+export fixedint_canonical_pairs, run_fixedint_cgt_chunk
+export fixedint_catalog_path, fixedint_chunk_result_path
+export collect_fixedint_plot_cells
 
 end
