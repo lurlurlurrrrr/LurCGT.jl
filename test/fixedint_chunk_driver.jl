@@ -12,7 +12,8 @@ function run_fixedint_chunk_cli(numtype_name::AbstractString,
     m2::Int,
     chunk1::Int,
     chunk2::Int;
-    merge_local_ireps=true,
+    update_catalog=false,
+    merge_local_ireps=false,
     verbose=1)
 
     RT = parse_fixedint_type(numtype_name)
@@ -30,6 +31,7 @@ function run_fixedint_chunk_cli(numtype_name::AbstractString,
         chunk2;
         base_dir=fixedint_data_root_from_env(),
         save=true,
+        update_catalog=update_catalog,
         merge_local_ireps=merge_local_ireps,
         verbose=verbose,
     )
@@ -39,6 +41,7 @@ if abspath(PROGRAM_FILE) == @__FILE__
     if length(ARGS) != 10
         println("Usage: julia --project=. test/fixedint_chunk_driver.jl <NUMTYPE> <SYMMETRY> <D1MIN> <D1MAX> <D2MIN> <D2MAX> <M1> <M2> <CHUNK1> <CHUNK2>")
         println("Example: julia --project=. test/fixedint_chunk_driver.jl Int128 SU3 1 20 1 20 4 4 1 2")
+        println("Run test/fixedint_irep_catalog_driver.jl first to create the catalog.")
         exit(1)
     end
 

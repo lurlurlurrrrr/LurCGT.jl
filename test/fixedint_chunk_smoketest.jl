@@ -9,6 +9,10 @@ include("fixedint_catalog_read_driver.jl")
     @test LurCGT.fixedint_dimension_chunks(5, 5, 3) == [(5, 5)]
 end
 
+@testset "fixedint symmetry parser accepts G2" begin
+    @test parse_nonabelian_symmetry("G2") == G2
+end
+
 @testset "fixedint canonical pairs" begin
     entries1 = [
         (qlabel=(0, 1), dim=3),
@@ -112,6 +116,19 @@ end
     end
 end
 
+@testset "fixedint catalog supports G2" begin
+    mktempdir() do tmp
+        catalog = LurCGT.update_fixedint_irrep_catalog(G2, Int64; maxdim=14, base_dir=tmp, save=false)
+        @test catalog.numtype == "Int64"
+        @test catalog.symmetry == "G2"
+        @test catalog.accepted[1:3] == [
+            (qlabel=(0, 0), dim=1),
+            (qlabel=(1, 0), dim=7),
+            (qlabel=(0, 1), dim=14),
+        ]
+    end
+end
+
 @testset "fixedint catalog can merge local irreps after search" begin
     mktempdir() do tmp
         seen = Ref{Any}(nothing)
@@ -143,6 +160,64 @@ end
             clear_local_after=true,
             verbose=0,
         )
+    end
+end
+
+@testset "fixedint chunk requires prebuilt catalog in read-only mode" begin
+    mktempdir() do tmp
+        err = try
+            LurCGT.run_fixedint_cgt_chunk(
+                SU{2},
+                Int64,
+                1,
+                4,
+                1,
+                4,
+                2,
+                2,
+                1,
+                2;
+                base_dir=tmp,
+                save=false,
+                update_catalog=false,
+                verbose=0,
+            )
+            nothing
+        catch caught
+            caught
+        end
+
+        @test err isa ArgumentError
+        @test occursin("Run test/fixedint_irep_catalog_driver.jl first.", sprint(showerror, err))
+    end
+end
+
+@testset "fixedint chunk reads catalog without updating or merging" begin
+    mktempdir() do tmp
+        LurCGT.update_fixedint_irrep_catalog(SU{2}, Int64; maxdim=4, base_dir=tmp, save=true)
+
+        summary = LurCGT.run_fixedint_cgt_chunk(
+            SU{2},
+            Int64,
+            1,
+            4,
+            1,
+            4,
+            2,
+            2,
+            1,
+            2;
+            base_dir=tmp,
+            save=false,
+            update_catalog=false,
+            merge_local_ireps=false,
+            merge_ireps_fn=(S; clear_local_after=true, verbose=1) -> error("merge should not run for chunk workers"),
+            verbose=0,
+        )
+
+        @test summary.failed_pairs == 0
+        @test summary.dim_range1 == (1, 2)
+        @test summary.dim_range2 == (3, 4)
     end
 end
 

@@ -1,8 +1,9 @@
 using LurCGT
 
 function parse_nonabelian_symmetry(symmetry_name::AbstractString)
+    symmetry_name == "G2" && return LurCGT.G2
     m = match(r"^(SU|SO|Sp)(\d+)$", symmetry_name)
-    isnothing(m) && throw(ArgumentError("symmetry must look like SU3, SO5, or Sp4"))
+    isnothing(m) && throw(ArgumentError("symmetry must look like SU3, SO5, Sp4, or G2"))
     family, rank_text = m.captures
     rank = parse(Int, rank_text)
     if family == "SU"

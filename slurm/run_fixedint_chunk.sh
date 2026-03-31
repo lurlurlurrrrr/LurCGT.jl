@@ -3,7 +3,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --qos=medium
-#SBATCH --partition=B1
+#SBATCH --partition=B2
 
 set -euo pipefail
 

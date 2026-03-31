@@ -510,20 +510,27 @@ function run_fixedint_cgt_chunk(::Type{S},
     chunk2::Int;
     base_dir=fixedint_default_base_dir(),
     save=true,
+    update_catalog::Bool=false,
     merge_local_ireps::Bool=false,
     merge_ireps_fn=merge_fixedint_ireps_to_global,
     verbose=1) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}}
 
-    catalog = update_fixedint_irrep_catalog(
-        S,
-        RT;
-        maxdim=max(d1max, d2max),
-        base_dir=base_dir,
-        save=true,
-        merge_local_ireps=merge_local_ireps,
-        merge_ireps_fn=merge_ireps_fn,
-        verbose=max(verbose - 1, 0),
-    )
+    catalog = if update_catalog
+        update_fixedint_irrep_catalog(
+            S,
+            RT;
+            maxdim=max(d1max, d2max),
+            base_dir=base_dir,
+            save=true,
+            merge_local_ireps=merge_local_ireps,
+            merge_ireps_fn=merge_ireps_fn,
+            verbose=max(verbose - 1, 0),
+        )
+    else
+        path = fixedint_catalog_path(S, RT; base_dir=base_dir)
+        isfile(path) || throw(ArgumentError("No catalog found at $path. Run test/fixedint_irep_catalog_driver.jl first."))
+        load_fixedint_catalog(S, RT; base_dir=base_dir)
+    end
     ranges1 = fixedint_dimension_chunks(d1min, d1max, m1)
     ranges2 = fixedint_dimension_chunks(d2min, d2max, m2)
     range1 = ranges1[chunk1]
