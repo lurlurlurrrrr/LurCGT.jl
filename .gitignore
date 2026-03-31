@@ -4,3 +4,4 @@ Manifest.toml
 *.jl.mem
 .DS_Store
 .worktrees/
+test/fixedint_data*

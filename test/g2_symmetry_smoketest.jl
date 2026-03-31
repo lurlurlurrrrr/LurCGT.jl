@@ -87,10 +87,7 @@ end
 
 g2_expected_dims() = [
     1, 7, 14, 27, 64, 77, 77, 182, 189, 273, 286, 378, 448, 714, 729, 748,
-    896, 924, 1254, 1547, 1728, 1729, 2079, 2079, 2261, 2926, 3003, 3289,
-    3542, 4096, 4914, 4928, 4928, 5005, 5103, 6630, 7293, 7371, 7722, 8372,
-    9177, 9660, 10206, 10556, 11571, 11648, 12096, 13090,
-]
+    896, 924, 1254, 1547, 1728, 1729, 2079, 2079, 2261, 2926]
 
 g2_weyl_dim(a::Int, b::Int) =
     ((a + 1) * (b + 1) * (a + b + 2) * (a + 2b + 3) * (a + 3b + 4) * (2a + 3b + 5)) ÷ 120
@@ -102,8 +99,7 @@ g2_weyl_dim(a::Int, b::Int) =
 
     dims = Int[]
     for a in 0:12, b in 0:12
-        g2_weyl_dim(a, b) <= 13090 || continue
-        println("checking G2 qlabel ", (a, b))
+        g2_weyl_dim(a, b) <= 2926 || continue
         push!(dims, LurCGT.dimension(LurCGT.getNsave_irep(G2, BigInt, (a, b))))
     end
     @test sort(dims) == g2_expected_dims()

@@ -405,12 +405,21 @@ function save_fixedint_catalog(::Type{S},
     return catalog
 end
 
+function merge_fixedint_ireps_to_global(::Type{S};
+    clear_local_after::Bool=true,
+    verbose=1,
+    merge_fn=merge_table_to_global) where {S<:NonabelianSymm}
+    return merge_fn(S, "irreps"; clear_local_after=clear_local_after, verbose=verbose)
+end
+
 function update_fixedint_irrep_catalog(::Type{S},
     ::Type{RT};
     maxdim::Int,
     maxcount=nothing,
     save=true,
     base_dir=fixedint_default_base_dir(),
+    merge_local_ireps::Bool=false,
+    merge_ireps_fn=merge_fixedint_ireps_to_global,
     verbose=0) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}}
 
     NZ = nzops(S)
@@ -462,6 +471,7 @@ function update_fixedint_irrep_catalog(::Type{S},
         scanned=scanned,
     )
     save && save_fixedint_catalog(S, RT, new_catalog; base_dir=base_dir)
+    merge_local_ireps && merge_ireps_fn(S; clear_local_after=true, verbose=verbose)
     return new_catalog
 end
 
@@ -500,6 +510,8 @@ function run_fixedint_cgt_chunk(::Type{S},
     chunk2::Int;
     base_dir=fixedint_default_base_dir(),
     save=true,
+    merge_local_ireps::Bool=false,
+    merge_ireps_fn=merge_fixedint_ireps_to_global,
     verbose=1) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}}
 
     catalog = update_fixedint_irrep_catalog(
@@ -508,6 +520,8 @@ function run_fixedint_cgt_chunk(::Type{S},
         maxdim=max(d1max, d2max),
         base_dir=base_dir,
         save=true,
+        merge_local_ireps=merge_local_ireps,
+        merge_ireps_fn=merge_ireps_fn,
         verbose=max(verbose - 1, 0),
     )
     ranges1 = fixedint_dimension_chunks(d1min, d1max, m1)

@@ -2,6 +2,8 @@ using Test
 using Serialization
 using LurCGT
 
+include("fixedint_catalog_read_driver.jl")
+
 @testset "fixedint dimension chunks" begin
     @test LurCGT.fixedint_dimension_chunks(1, 10, 4) == [(1, 2), (3, 5), (6, 7), (8, 10)]
     @test LurCGT.fixedint_dimension_chunks(5, 5, 3) == [(5, 5)]
@@ -34,6 +36,32 @@ end
         path = LurCGT.fixedint_chunk_result_path(SU{2}, Int64, (1, 2), (3, 4); base_dir=tmp)
         @test endswith(path, joinpath("Int64", "SU2", "chunks", "1_2__3_4.jls"))
     end
+end
+
+@testset "fixedint irrep merge helper targets irreps table" begin
+    seen = Ref{Any}(nothing)
+    result = LurCGT.merge_fixedint_ireps_to_global(
+        SU{2};
+        clear_local_after=false,
+        verbose=0,
+        merge_fn=(S, table_name; clear_local_after=true, verbose=1) -> begin
+            seen[] = (
+                symmetry=S,
+                table_name=table_name,
+                clear_local_after=clear_local_after,
+                verbose=verbose,
+            )
+            return (merged=3, skipped=1)
+        end,
+    )
+
+    @test seen[] == (
+        symmetry=SU{2},
+        table_name="irreps",
+        clear_local_after=false,
+        verbose=0,
+    )
+    @test result == (merged=3, skipped=1)
 end
 
 @testset "fixedint catalog and chunk smoke" begin
@@ -84,6 +112,40 @@ end
     end
 end
 
+@testset "fixedint catalog can merge local irreps after search" begin
+    mktempdir() do tmp
+        seen = Ref{Any}(nothing)
+        catalog = LurCGT.update_fixedint_irrep_catalog(
+            SU{2},
+            Int64;
+            maxdim=3,
+            base_dir=tmp,
+            save=false,
+            merge_local_ireps=true,
+            merge_ireps_fn=(S; clear_local_after=true, verbose=1) -> begin
+                seen[] = (
+                    symmetry=S,
+                    clear_local_after=clear_local_after,
+                    verbose=verbose,
+                )
+                return (merged=2, skipped=0)
+            end,
+            verbose=0,
+        )
+
+        @test catalog.accepted == [
+            (qlabel=(0,), dim=1),
+            (qlabel=(1,), dim=2),
+            (qlabel=(2,), dim=3),
+        ]
+        @test seen[] == (
+            symmetry=SU{2},
+            clear_local_after=true,
+            verbose=0,
+        )
+    end
+end
+
 @testset "fixedint plot cells stay separated by numtype" begin
     mktempdir() do tmp
         summary64 = (
@@ -112,5 +174,22 @@ end
 
         @test LurCGT.collect_fixedint_plot_cells(SU{2}, Int64; base_dir=tmp) == [(dim1=1, dim2=2, status=:passed)]
         @test LurCGT.collect_fixedint_plot_cells(SU{2}, Int128; base_dir=tmp) == [(dim1=1, dim2=3, status=:passed)]
+    end
+end
+
+@testset "fixedint catalog read driver prints accepted entries" begin
+    mktempdir() do tmp
+        LurCGT.update_fixedint_irrep_catalog(SU{2}, Int64; maxdim=3, base_dir=tmp, save=true)
+
+        output = withenv("FIXEDINT_DATA_ROOT" => tmp) do
+            sprint() do io
+                run_fixedint_catalog_read_cli("Int64", "SU2"; mode="accepted", io=io)
+            end
+        end
+
+        @test occursin("Path:", output)
+        @test occursin("Accepted: 3", output)
+        @test occursin("accepted dim=1 q=(0,)", output)
+        @test occursin("accepted dim=3 q=(2,)", output)
     end
 end

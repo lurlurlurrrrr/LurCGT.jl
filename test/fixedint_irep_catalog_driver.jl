@@ -5,6 +5,7 @@ include("fixedint_driver_utils.jl")
 function run_fixedint_catalog_cli(numtype_name::AbstractString,
     symmetry_name::AbstractString,
     maxdim::Int;
+    merge_local_ireps=true,
     verbose=1)
 
     RT = parse_fixedint_type(numtype_name)
@@ -15,6 +16,7 @@ function run_fixedint_catalog_cli(numtype_name::AbstractString,
         maxdim=maxdim,
         base_dir=fixedint_data_root_from_env(),
         save=true,
+        merge_local_ireps=merge_local_ireps,
         verbose=verbose,
     )
 end

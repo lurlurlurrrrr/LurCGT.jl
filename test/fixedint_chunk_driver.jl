@@ -12,6 +12,7 @@ function run_fixedint_chunk_cli(numtype_name::AbstractString,
     m2::Int,
     chunk1::Int,
     chunk2::Int;
+    merge_local_ireps=true,
     verbose=1)
 
     RT = parse_fixedint_type(numtype_name)
@@ -29,6 +30,7 @@ function run_fixedint_chunk_cli(numtype_name::AbstractString,
         chunk2;
         base_dir=fixedint_data_root_from_env(),
         save=true,
+        merge_local_ireps=merge_local_ireps,
         verbose=verbose,
     )
 end

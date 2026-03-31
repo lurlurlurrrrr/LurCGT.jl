@@ -29,6 +29,6 @@ export detect_1j, get_conj_perm, transf_basis!
 export update_fixedint_irrep_catalog, fixedint_dimension_chunks
 export fixedint_canonical_pairs, run_fixedint_cgt_chunk
 export fixedint_catalog_path, fixedint_chunk_result_path
-export collect_fixedint_plot_cells
+export collect_fixedint_plot_cells, merge_fixedint_ireps_to_global
 
 end
