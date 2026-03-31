@@ -129,6 +129,40 @@ end
     end
 end
 
+@testset "fixedint chunk canonicalizes qlabels for CGT generation" begin
+    mktempdir() do tmp
+        LurCGT.update_fixedint_irrep_catalog(G2, Int64; maxdim=14, base_dir=tmp, save=true)
+        seen_pairs = Tuple{Tuple{Int, Int}, Tuple{Int, Int}}[]
+
+        summary = LurCGT.run_fixedint_cgt_chunk(
+            G2,
+            Int64,
+            1,
+            14,
+            1,
+            14,
+            1,
+            1,
+            1,
+            1;
+            base_dir=tmp,
+            save=false,
+            update_catalog=false,
+            merge_local_ireps=false,
+            generate_cgt_fn=(S, CT1, CT2, qpair, out; assertlev=1, save=false) -> begin
+                push!(seen_pairs, qpair)
+                return nothing
+            end,
+            verbose=0,
+        )
+
+        @test summary.failed_pairs == 0
+        @test ((0, 1), (1, 0)) in seen_pairs
+        @test !(((1, 0), (0, 1)) in seen_pairs)
+        @test all(qpair -> qpair[1] <= qpair[2], seen_pairs)
+    end
+end
+
 @testset "fixedint catalog can merge local irreps after search" begin
     mktempdir() do tmp
         seen = Ref{Any}(nothing)

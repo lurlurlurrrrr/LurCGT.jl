@@ -513,6 +513,7 @@ function run_fixedint_cgt_chunk(::Type{S},
     update_catalog::Bool=false,
     merge_local_ireps::Bool=false,
     merge_ireps_fn=merge_fixedint_ireps_to_global,
+    generate_cgt_fn=generate_every_CGT,
     verbose=1) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}}
 
     catalog = if update_catalog
@@ -541,8 +542,9 @@ function run_fixedint_cgt_chunk(::Type{S},
     pairs = fixedint_canonical_pairs(entries1, entries2)
 
     results = map(pairs) do pair
+        cgt_pair = minmax(pair.q1, pair.q2)
         try
-            generate_every_CGT(S, RT, RT, (pair.q1, pair.q2), nothing; assertlev=1, save=false)
+            generate_cgt_fn(S, RT, RT, cgt_pair, nothing; assertlev=1, save=false)
             merge(pair, (status=:passed, reason="passed"))
         catch err
             if err isa AssertionError || err isa OverflowError || err isa InexactError
