@@ -184,14 +184,6 @@ function getNsave_Xsymbol_zeroadded(::Type{S},
     loaded = load_Xsymbol_sqlite(S, up1sp, dn1sp, up2sp, dn2sp, ctlegs1, ctlegs2)
     if !isnothing(loaded) return loaded end
 
-    # First, we need to get outer multiplicities of CGTs involved
-    is1j_1 = detect_1j(S, up1sp, dn1sp, ctlegs1)
-    CGT1_oms = get_CGTom(S, up1sp, dn1sp, is1j_1)
-    @assert CGT1_oms.totalOM > 0 "CGT1 has zero outer multiplicity"
-    is1j_2 = detect_1j(S, up2sp, dn2sp, ctlegs2)
-    CGT2_oms = get_CGTom(S, up2sp, dn2sp, is1j_2)
-    @assert CGT2_oms.totalOM > 0 "CGT2 has zero outer multiplicity"
-    
     # Upper / lower spaces for the resulting CGT
     up3sp, dn3sp = get_resulting_spaces(
         up1sp, dn1sp, up2sp, dn2sp, ctlegs1, ctlegs2)
@@ -200,6 +192,15 @@ function getNsave_Xsymbol_zeroadded(::Type{S},
     is1j_res = detect_1j(S, up3sp, dn3sp)
     CGT3_oms = get_CGTom(S, up3sp, dn3sp, is1j_res)
     if CGT3_oms.totalOM == 0 return end
+
+    # First, we need to get outer multiplicities of CGTs involved
+    is1j_1 = detect_1j(S, up1sp, dn1sp, ctlegs1)
+    CGT1_oms = get_CGTom(S, up1sp, dn1sp, is1j_1)
+    @assert CGT1_oms.totalOM > 0 "CGT1 has zero outer multiplicity"
+    is1j_2 = detect_1j(S, up2sp, dn2sp, ctlegs2)
+    CGT2_oms = get_CGTom(S, up2sp, dn2sp, is1j_2)
+    @assert CGT2_oms.totalOM > 0 "CGT2 has zero outer multiplicity"
+
 
     is1j_2 = detect_1j(S, up2sp, dn2sp, ctlegs2)
     if (is1j_1 || is1j_2) && use1j

@@ -92,9 +92,9 @@ getNsave_CGTSVD(::Type{S},
 # `(upsp..., dnsp...)`, and must be a non-empty proper subset of `1:total`.
 function normalize_cgtsvd_leftlegs(leftlegs, total::Int)
     legs = sort!(collect(Int, leftlegs))
-    isempty(legs) && throw(ArgumentError("CGTSVD requires at least one left leg"))
+    length(legs) > 0 || throw(ArgumentError("CGTSVD requires at least one left leg"))
     length(legs) < total || throw(ArgumentError(
-        "CGTSVD requires at most $(total - 1) left legs for a rank-$total CGT"))
+        "CGTSVD requires at most $(total) left legs for a rank-$total CGT"))
     all(1 .<= legs .<= total) || throw(ArgumentError(
         "CGTSVD left legs must lie between 1 and $total"))
     length(unique(legs)) == length(legs) || throw(ArgumentError(
@@ -193,14 +193,14 @@ function get_split_sector_vectors(::Type{S},
     center_dn = (zeroq,)
 
     left_dn_q = stable_sort_tuple((left_dn..., q))
-    right_dn_dualq = stable_sort_tuple((right_dn..., dualq))
+    right_dn_dualq = stable_sort_tuple((dualq, right_dn...))
     interm_up = stable_sort_tuple((dualq, left_up...))
     interm_dn = left_dn
 
     qpos_center = findfirst(==(q), center_up)
     qpos_left = findlast(==(q), left_dn_q)
     dualqpos_interm = findfirst(==(dualq), interm_up)
-    dualqpos_right = findlast(==(dualq), right_dn_dualq)
+    dualqpos_right = findfirst(==(dualq), right_dn_dualq)
     @assert !isnothing(qpos_center)
     @assert !isnothing(qpos_left)
     @assert !isnothing(dualqpos_interm)
@@ -281,8 +281,21 @@ function getNsave_CGTSVD(::Type{S},
     verbose=0) where {S<:NonabelianSymm, U, D, NZ}
 
     @assert issorted(upsp) && issorted(dnsp)
-    leftlegs_ = normalize_cgtsvd_leftlegs(leftlegs, U + D)
+    upsp, dnsp, leftlegs = standardize_spaces_and_legs(S, upsp, dnsp, leftlegs, true)
+    getNsave_CGTSVD_stan(S, upsp, dnsp, leftlegs; save, verbose)
+end
 
+function getNsave_CGTSVD_stan(::Type{S}, 
+    upsp::NTuple{U, NTuple{NZ, Int}}, 
+    dnsp::NTuple{D, NTuple{NZ, Int}}, 
+    leftlegs; 
+    save, 
+    verbose) where {S<:NonabelianSymm, U, D, NZ}
+
+    if length(leftlegs) == 0 return true 
+    elseif length(leftlegs) == U + D return false end
+    
+    leftlegs_ = normalize_cgtsvd_leftlegs(leftlegs, U + D)
     loaded = load_CGTSVD_sqlite(S, upsp, dnsp, leftlegs_)
     if !isnothing(loaded) return loaded end
 
