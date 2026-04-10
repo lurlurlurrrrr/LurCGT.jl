@@ -638,7 +638,7 @@ function get_irops_sector_!(::Val{I},
                                     comm_res = comm(lop, irops_sector[wtup][j])
                                     irops_sector[wt][nzind] = div.(comm_res, nzval)
                                 else
-                                    slice = [[Colon() for _=1:I-1]..., j, [1 for _=I+1:N]...]
+                                    slice = [[Colon() for _=1:I-1]..., j, [[1] for _=I+1:N]...]
                                     for idx in CartesianIndices(irops_sector[wtup][slice...])
                                         idx_init = [idx.I..., j, [1 for _=I+1:N]...]
                                         idx_final = [idx.I..., nzind, [1 for _=I+1:N]...]
@@ -668,6 +668,11 @@ function get_IROP(symm::NTuple{N, Any},
     z_ops::NTuple{N, Vector{<:Tuple{Vararg{Int}}}},
     lowering_ops::NTuple{N, Vector{<:AbstractMatrix{Int}}},
     mwirop::AbstractMatrix{<:Integer}) where N
+
+    #println(symm)
+    #for ls in lowering_ops for lop in ls display(Matrix(lop)) end end
+    #println("Maximal weight operator:")
+    #display(mwirop)
 
     spdim = length(z_ops[1])
     # First, get the weight of maximal weight operator
