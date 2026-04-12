@@ -99,15 +99,45 @@ end
 remove_zeros(::Type{S}, tup::Tuple{}) where {S<:Symmetry} = (Tuple(0 for _ in 1:nzops(S)),), 0
 
 # Remove all zero spaces, and if there is no non-zero space, add one zero space
-function remove_zeros(::Type{S}, 
+function remove_zeros(::Type{S},
     tup::NTuple{N, NTuple{NZ, Int}}) where {S<:Symmetry, N, NZ}
 
-    zerotup = Tuple(0 for _ in 1:NZ)
+    zerotup = ntuple(_ -> 0, Val(NZ))
+
+    has_zero = false
+    for sp in tup
+        if sp == zerotup
+            has_zero = true
+            break
+        end
+    end
+    has_zero || return tup, 0
+
     zcnt = 0
     res = NTuple{NZ, Int}[]
-    for sp in tup if sp != zerotup push!(res, sp) else zcnt += 1 end end
+    sizehint!(res, N)
+    for sp in tup
+        if sp != zerotup
+            push!(res, sp)
+        else
+            zcnt += 1
+        end
+    end
     if isempty(res) push!(res, zerotup) end
     return Tuple(res), zcnt
+end
+
+@inline function _sort_contract_legs(
+    ctlegs1::NTuple{M, Int},
+    ctlegs2::NTuple{M, Int}) where {M}
+
+    if M <= 1 || issorted(ctlegs1)
+        return ctlegs1, ctlegs2
+    end
+
+    perm = sortperm(collect(ctlegs1))
+    return ntuple(i -> ctlegs1[perm[i]], Val(M)),
+           ntuple(i -> ctlegs2[perm[i]], Val(M))
 end
 
 function standardize_spaces_and_legs(::Type{S},
@@ -116,15 +146,12 @@ function standardize_spaces_and_legs(::Type{S},
     legs::NTuple{M, Int},
     upperfirst::Bool) where {S<:NonabelianSymm, U, D, NZ, M}
     # 'legs' should be sorted in ascending order
-    up_contracted = Tuple(i for i in legs if i <= U)
-    dn_contracted = Tuple(i-U for i in legs if i > U)
-
     @assert issorted(upsp) && issorted(dnsp)
     upsp, nzup = remove_zeros(S, upsp)
     dnsp, nzdn = remove_zeros(S, dnsp)
 
-    upc = Tuple(i-nzup for i in up_contracted if i > nzup)
-    dnc = Tuple(i-nzdn+length(upsp) for i in dn_contracted if i > nzdn)
+    upc = Tuple(i - nzup for i in legs if i <= U && i > nzup)
+    dnc = Tuple(i - U - nzdn + length(upsp) for i in legs if i > U && i - U > nzdn)
     legs = upperfirst ? (upc..., dnc...) : (dnc..., upc...)
     return upsp, dnsp, legs
 end
@@ -143,8 +170,7 @@ function getNsave_Xsymbol(::Type{S},
 
     up1sp, dn1sp, ctlegs1 = standardize_spaces_and_legs(S, up1sp, dn1sp, ctlegs1, true)
     up2sp, dn2sp, ctlegs2 = standardize_spaces_and_legs(S, up2sp, dn2sp, ctlegs2, false)
-    perm = sortperm(collect(ctlegs1))
-    ctlegs1 = Tuple(ctlegs1[i] for i in perm); ctlegs2 = Tuple(ctlegs2[i] for i in perm)
+    ctlegs1, ctlegs2 = _sort_contract_legs(ctlegs1, ctlegs2)
     getNsave_Xsymbol_zeroadded(S, up1sp, dn1sp, up2sp, dn2sp, ctlegs1, ctlegs2; verbose, use1j, save)
 end
 
