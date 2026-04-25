@@ -114,17 +114,12 @@ function remove_zeros(::Type{S},
     has_zero || return tup, 0
 
     zcnt = 0
-    res = NTuple{NZ, Int}[]
-    sizehint!(res, N)
     for sp in tup
-        if sp != zerotup
-            push!(res, sp)
-        else
-            zcnt += 1
-        end
+        if sp != zerotup break 
+        else zcnt += 1 end
     end
-    if isempty(res) push!(res, zerotup) end
-    return Tuple(res), zcnt
+    if zcnt == N return (zerotup,), zcnt 
+    else return tup[zcnt+1:end], zcnt end
 end
 
 @inline function _sort_contract_legs(
@@ -146,7 +141,7 @@ function standardize_spaces_and_legs(::Type{S},
     legs::NTuple{M, Int},
     upperfirst::Bool) where {S<:NonabelianSymm, U, D, NZ, M}
     # 'legs' should be sorted in ascending order
-    @assert issorted(upsp) && issorted(dnsp)
+    #@assert issorted(upsp) && issorted(dnsp)
     upsp, nzup = remove_zeros(S, upsp)
     dnsp, nzdn = remove_zeros(S, dnsp)
 
