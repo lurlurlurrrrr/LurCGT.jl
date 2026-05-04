@@ -57,6 +57,87 @@ function _nonempty_env_value(env::AbstractDict, key::AbstractString)
     return isempty(value) ? nothing : value
 end
 
+_resolve_storage_dir(path::AbstractString) = normpath(abspath(expanduser(path)))
+
+function sqlite_run_mode(env::AbstractDict=ENV)
+    mode = lowercase(something(_nonempty_env_value(env, "LURCGT_RUN_MODE"), "local"))
+    mode in ("local", "server") ||
+        throw(ArgumentError("LURCGT_RUN_MODE must be \"local\" or \"server\", got \"$(mode)\""))
+    return mode
+end
+
+sqlite_local_source_dir(env::AbstractDict=ENV) =
+    _resolve_storage_dir(something(_nonempty_env_value(env, "LURCGT_LOCALDB_DIR"),
+                                   joinpath(homedir(), ".LurCGT_sqlite", "local")))
+
+sqlite_global_source_dir(env::AbstractDict=ENV) =
+    _resolve_storage_dir(something(_nonempty_env_value(env, "LURCGT_GLOBALDB_DIR"),
+                                   joinpath(homedir(), ".LurCGT_sqlite", "global")))
+
+sqlite_local_node_dir(env::AbstractDict=ENV) =
+    _resolve_storage_dir(something(_nonempty_env_value(env, "LURCGT_LOCALDB_DIR_NODE"),
+                                   sqlite_local_source_dir(env)))
+
+sqlite_global_node_dir(env::AbstractDict=ENV) =
+    _resolve_storage_dir(something(_nonempty_env_value(env, "LURCGT_GLOBALDB_DIR_NODE"),
+                                   sqlite_global_source_dir(env)))
+
+sqlite_local_dir(env::AbstractDict=ENV) =
+    sqlite_run_mode(env) == "server" ? sqlite_local_node_dir(env) : sqlite_local_source_dir(env)
+
+sqlite_global_dir(env::AbstractDict=ENV) =
+    sqlite_run_mode(env) == "server" ? sqlite_global_node_dir(env) : sqlite_global_source_dir(env)
+
+sqlite_lock_dir(env::AbstractDict=ENV) = joinpath(sqlite_global_dir(env), "locks")
+
+function sqlite_db_source_path(::Type{S}, location::Symbol=:local;
+                               env::AbstractDict=ENV,
+                               process_id::AbstractString=process_local_id()) where {S<:NonabelianSymm}
+    @assert location in (:local, :global)
+    symm_name = totxt(S)
+    if location == :global
+        return joinpath(sqlite_global_source_dir(env), "$(symm_name).db")
+    end
+    return joinpath(sqlite_local_source_dir(env), symm_name, "$(process_id).db")
+end
+
+function sqlite_db_path(::Type{S}, location::Symbol=:local;
+                        env::AbstractDict=ENV,
+                        process_id::AbstractString=process_local_id()) where {S<:NonabelianSymm}
+    @assert location in (:local, :global)
+    symm_name = totxt(S)
+    if location == :global
+        return joinpath(sqlite_global_dir(env), "$(symm_name).db")
+    end
+    return joinpath(sqlite_local_dir(env), symm_name, "$(process_id).db")
+end
+
+function _copy_sqlite_file_set(source_path::AbstractString, target_path::AbstractString)
+    mkpath(dirname(target_path))
+    for suffix in ("", "-wal", "-shm")
+        source_file = string(source_path, suffix)
+        target_file = string(target_path, suffix)
+        isfile(source_file) || continue
+        cp(source_file, target_file; force=true)
+    end
+    return nothing
+end
+
+function _prepare_server_sqlite_db(::Type{S}, location::Symbol, path::AbstractString;
+                                   env::AbstractDict=ENV,
+                                   process_id::AbstractString=process_local_id()) where {S<:NonabelianSymm}
+    sqlite_run_mode(env) == "server" || return nothing
+    isfile(path) && return nothing
+
+    source_path = sqlite_db_source_path(S, location; env, process_id)
+    path == source_path && return nothing
+
+    if isfile(source_path)
+        _copy_sqlite_file_set(source_path, path)
+    end
+    return nothing
+end
+
 function build_process_local_id(env::AbstractDict=ENV;
                                 hostname::AbstractString=gethostname(),
                                 pid::Integer=getpid())
@@ -112,27 +193,16 @@ Locations:
 """
 function get_sqlite_db(::Type{S}, location::Symbol=:local) where {S<:NonabelianSymm}
     @assert location in (:local, :global)
-    symm_name = totxt(S)
+    path = sqlite_db_path(S, location)
 
     Base.lock(SQLITE_DB_LOCK) do
-        if location == :global
-            db_key = "$(symm_name)_global"
-            get!(SQLITE_DBS, db_key) do
-                path = joinpath(homedir(), ".LurCGT_sqlite", "global", "$(symm_name).db")
-                mkpath(dirname(path))
-                db = SQLite.DB(path)
-                _init_sqlite_db(db)
-                db
-            end
-        else
-            db_key = "$(symm_name)_local_$(process_local_id())"
-            get!(SQLITE_DBS, db_key) do
-                path = joinpath(homedir(), ".LurCGT_sqlite", "local", symm_name, "$(process_local_id()).db")
-                mkpath(dirname(path))
-                db = SQLite.DB(path)
-                _init_sqlite_db(db)
-                db
-            end
+        _prepare_server_sqlite_db(S, location, path)
+        db_key = "$(location):$(path)"
+        get!(SQLITE_DBS, db_key) do
+            mkpath(dirname(path))
+            db = SQLite.DB(path)
+            _init_sqlite_db(db)
+            db
         end
     end
 end
@@ -526,7 +596,7 @@ function merge_table_to_global(::Type{S}, table_name::String, filter_prefix::Str
     local_db = get_sqlite_db(S, :local)
     global_db = get_sqlite_db(S, :global)
 
-    lockdir = joinpath(homedir(), ".LurCGT_sqlite", "locks")
+    lockdir = sqlite_lock_dir()
     mkpath(lockdir)
     lockpath = joinpath(lockdir, "$(totxt(S))_merge.lock")
 
@@ -696,3 +766,4 @@ end
 function __init__()
     PROCESS_LOCAL_ID[] = build_process_local_id()
 end
+

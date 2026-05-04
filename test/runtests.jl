@@ -7,6 +7,7 @@ using Random
 using StatsBase
 using Test
 using TOML
+using DBInterface
 
 include("test_utils.jl")
 
@@ -32,6 +33,104 @@ end
     @test isdefined(LurCGT, :SU)
     @test isdefined(LurCGT, :getNsave_irep)
     @test isabelian(U1)
+end
+
+@testset "SQLite environment overrides" begin
+    mktempdir() do tmp
+        try
+            local_dir = joinpath(tmp, "local-db")
+            global_dir = joinpath(tmp, "global-db")
+            node_local_dir = joinpath(tmp, "node-local-db")
+            node_global_dir = joinpath(tmp, "node-global-db")
+            empty_local_dir = joinpath(tmp, "empty-local-db")
+            empty_global_dir = joinpath(tmp, "empty-global-db")
+            fresh_node_local_dir = joinpath(tmp, "fresh-node-local-db")
+            fresh_node_global_dir = joinpath(tmp, "fresh-node-global-db")
+            process_id = LurCGT.process_local_id()
+            symm_name = LurCGT.totxt(SU{2})
+            local_copy_key = "sqlite_server_local_copy"
+            global_copy_key = "sqlite_server_global_copy"
+            payload = UInt8[0x01, 0x02, 0x03]
+
+            withenv("LURCGT_LOCALDB_DIR" => local_dir,
+                    "LURCGT_GLOBALDB_DIR" => global_dir) do
+                try
+                    LurCGT.close_all_sqlite_dbs()
+                    local_db = LurCGT.get_sqlite_db(SU{2}, :local)
+                    global_db = LurCGT.get_sqlite_db(SU{2}, :global)
+                    DBInterface.execute(local_db,
+                        "INSERT OR REPLACE INTO irreps (key, data) VALUES (?, ?)",
+                        [local_copy_key, payload])
+                    DBInterface.execute(global_db,
+                        "INSERT OR REPLACE INTO irreps (key, data) VALUES (?, ?)",
+                        [global_copy_key, payload])
+                finally
+                    LurCGT.close_all_sqlite_dbs()
+                end
+            end
+
+            withenv("LURCGT_RUN_MODE" => "server",
+                    "LURCGT_LOCALDB_DIR" => local_dir,
+                    "LURCGT_GLOBALDB_DIR" => global_dir,
+                    "LURCGT_LOCALDB_DIR_NODE" => node_local_dir,
+                    "LURCGT_GLOBALDB_DIR_NODE" => node_global_dir) do
+                try
+                    LurCGT.close_all_sqlite_dbs()
+                    local_node_path = LurCGT.sqlite_db_path(SU{2}, :local; process_id=process_id)
+                    global_node_path = LurCGT.sqlite_db_path(SU{2}, :global; process_id=process_id)
+                    @test !isfile(local_node_path)
+                    @test !isfile(global_node_path)
+
+                    local_db = LurCGT.get_sqlite_db(SU{2}, :local)
+                    global_db = LurCGT.get_sqlite_db(SU{2}, :global)
+
+                    @test isfile(local_db.file)
+                    @test isfile(global_db.file)
+                    @test LurCGT.sqlite_lock_dir() == joinpath(normpath(abspath(node_global_dir)), "locks")
+                    @test first(DBInterface.execute(local_db,
+                        "SELECT COUNT(*) AS n FROM irreps WHERE key = ?",
+                        [local_copy_key])).n == 1
+                    @test first(DBInterface.execute(global_db,
+                        "SELECT COUNT(*) AS n FROM irreps WHERE key = ?",
+                        [global_copy_key])).n == 1
+                finally
+                    LurCGT.close_all_sqlite_dbs()
+                end
+            end
+
+            withenv("LURCGT_RUN_MODE" => "server",
+                    "LURCGT_LOCALDB_DIR" => empty_local_dir,
+                    "LURCGT_GLOBALDB_DIR" => empty_global_dir,
+                    "LURCGT_LOCALDB_DIR_NODE" => fresh_node_local_dir,
+                    "LURCGT_GLOBALDB_DIR_NODE" => fresh_node_global_dir) do
+                try
+                    LurCGT.close_all_sqlite_dbs()
+                    local_node_path = LurCGT.sqlite_db_path(SU{2}, :local; process_id=process_id)
+                    global_node_path = LurCGT.sqlite_db_path(SU{2}, :global; process_id=process_id)
+                    @test !isfile(local_node_path)
+                    @test !isfile(global_node_path)
+
+                    local_db = LurCGT.get_sqlite_db(SU{2}, :local)
+                    global_db = LurCGT.get_sqlite_db(SU{2}, :global)
+
+                    @test isfile(local_db.file)
+                    @test isfile(global_db.file)
+                    @test dirname(local_db.file) == joinpath(normpath(abspath(fresh_node_local_dir)), symm_name)
+                    @test dirname(global_db.file) == normpath(abspath(fresh_node_global_dir))
+                    @test first(DBInterface.execute(local_db, "SELECT COUNT(*) AS n FROM irreps")).n == 0
+                    @test first(DBInterface.execute(global_db, "SELECT COUNT(*) AS n FROM irreps")).n == 0
+                finally
+                    LurCGT.close_all_sqlite_dbs()
+                end
+            end
+
+            withenv("LURCGT_RUN_MODE" => "invalid") do
+                @test_throws ArgumentError LurCGT.sqlite_run_mode()
+            end
+        finally
+            LurCGT.close_all_sqlite_dbs()
+        end
+    end
 end
 
 @testset "CGTSVD tests" begin
@@ -153,5 +252,4 @@ end
     LurCGT.merge_all_to_global(SU{2})
     LurCGT.merge_all_to_global(SU{3})
 end
-
 
