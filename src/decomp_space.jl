@@ -28,7 +28,7 @@ end
 
 function add_vectors!(ortho_vecs_sparse::SparseMatrixCSC{Float64},
     mult_inds::Vector{Int},
-    vectors::Array{BigInt, M},
+    vectors::Array{Float64, M},
     stidx::Int,
     inc::Int,
     reps::NTuple{N, Irep},
@@ -114,10 +114,8 @@ function decompose_space(symm::NTuple{N, Any},
     # Obtained vectors are not orthogonalized
     # Dim of array: (spdim1, N inner_mults..., outer_mult)
     foundvecs = Vector{Tuple{NTuple{N, Tuple{Vararg{Int}}}, 
-        Vector{Tuple{NTuple{N, Tuple{Vararg{Int}}}, Array{BigInt, N+2}}}}}()
+        Vector{Tuple{NTuple{N, Tuple{Vararg{Int}}}, Array{Float64, N+2}}}}}()
 
-    # Key: qlabels tuple, value: vector of norms fo the mwstates
-    mwstate_norms = Dict{NTuple{N, Tuple{Vararg{Int}}}, Vector{BigInt}}()
     remain_dim = spdim
     
 
@@ -133,42 +131,31 @@ function decompose_space(symm::NTuple{N, Any},
 
                 # Find a new highest weight state vector from 'foundvecs'
                 inmult = length(mult_vecs[w])
-                already_found = Matrix{BigInt}(undef, inmult, inmult-remain_inmult[w])
-                already_found_norms = BigInt[]
+                prev_found = inmult - remain_inmult[w]
+                already_found = Matrix{Float64}(undef, inmult, prev_found + outer_mult)
                 stidx = 1
-                # Fill in already_found and already_found_norms
+                for (prev_q, prev_vecs_w) in foundvecs
+                    prev_multiplet = Dict(prev_vecs_w)
+                    if haskey(prev_multiplet, w)
+                        vecs = get_orthogonal_vecs(symm, prev_q, w, prev_multiplet[w])
+                        nvecs = size(vecs, 2)
+                        already_found[:, stidx:stidx+nvecs-1] = vecs
+                        stidx += nvecs
+                    end
+                end
+                @assert stidx == prev_found + 1
 
-                # TODO: Modify this part since I no longer use Tmat & Nvec.
-#                for (kq, dict) in foundvecs
-#                    if haskey(dict, w)
-#                        vecs = get_orthogonal_vecs(symm, kq, w, dict[w])
-#                        nvecs = prod(size(vecs)[2:end])
-#                        @assert nvecs == size(vecs, 2)
-#                        
-#                        vecs_norms = get_vecs_norms(symm, kq, w, mwstate_norms[kq])
-#                        append!(already_found_norms, vecs_norms)
-#
-#                        already_found[:, stidx:stidx+nvecs-1] = vecs
-#                        stidx += nvecs
-#                    end
-#                end
-#                @assert stidx == inmult - remain_inmult[w] + 1
-#                for i in 1:size(already_found, 2)
-#                    @assert dot(already_found[:, i], already_found[:, i]) == already_found_norms[i]
-#                end
-
-                mwstate_norms_sector = Vector{BigInt}(undef, outer_mult)
-
-                mwstates = Matrix{BigInt}(undef, inmult, outer_mult)
+                mwstates = Matrix{Float64}(undef, inmult, outer_mult)
                 start_index = 1
                 for oidx=1:outer_mult
-                    mwstates[:, oidx], start_index, mwnorm = 
-                        get_mwstate(already_found, already_found_norms, start_index)
-                    mwstate_norms_sector[oidx] = mwnorm
+                    mwstate, start_index = get_mwstate(
+                        view(already_found, :, 1:prev_found+oidx-1), start_index)
+                    mwstates[:, oidx] = mwstate
+                    already_found[:, prev_found+oidx] = mwstate
                 end
 
                 multiplet = get_vectors_sector(output_ireps, lops_blk, mwstates, w)
-                vecs_w = Vector{Tuple{NTuple{N, Tuple{Vararg{Int}}}, Array{BigInt, N+2}}}()
+                vecs_w = Vector{Tuple{NTuple{N, Tuple{Vararg{Int}}}, Array{Float64, N+2}}}()
                 for w in sort(collect(keys(multiplet)); lt=lt_multisymm_weights, rev=true)
                     nvec = prod(size(multiplet[w])[2:end])
                     remain_inmult[w] -= nvec
@@ -176,7 +163,6 @@ function decompose_space(symm::NTuple{N, Any},
                     push!(vecs_w, (w, multiplet[w]))
                 end
                 push!(foundvecs, (qlabels_out, vecs_w))
-                mwstate_norms[qlabels_out] = mwstate_norms_sector
                 # println("Found new sector: qlabels=$(qlabels_out), outer_mult=$(outer_mult)")
             end
         end
@@ -224,19 +210,25 @@ function decompose_space(symm::NTuple{N, Any},
         for (sti, edi) in vec
             ortho_vecs_sparse[:, sti:edi] = ortho_vecs_sparse[:, sti:edi] * outputmat
         end
+        orthonormalize_outer_multiplicity!(ortho_vecs_sparse, vec)
     end
 
-    @assert ortho_vecs_sparse * ortho_vecs_sparse' ≈ I
+    ortho_err = norm(Matrix(ortho_vecs_sparse * ortho_vecs_sparse' - I))
+    @assert ortho_err < 1e-10 "Local-space basis is not orthonormal; error=$ortho_err"
+    #println("Decomposed local space:")
+    #display(Matrix(ortho_vecs_sparse))
+    #println("Indices:")
+    #display(mult_ind)
     return ortho_vecs_sparse, mult_ind
 end
 
 # There is a similar version of this function when getting IROP
 function get_vectors_sector(ireps::NTuple{N, Irep},
     lops_blk::NTuple{N, Vector{Dict{NTuple{N, Tuple{Vararg{Int}}}, SparseMatrixCSC{Int}}}},
-    mwstates::Matrix{BigInt},
+    mwstates::Matrix{Float64},
     mw::NTuple{N, Tuple{Vararg{Int}}}) where N
 
-    vecs_sector = Dict{NTuple{N, Tuple{Vararg{Int}}}, Array{BigInt, N+2}}()
+    vecs_sector = Dict{NTuple{N, Tuple{Vararg{Int}}}, Array{Float64, N+2}}()
     mw_inmult, om = size(mwstates)
     vecs_sector[mw] = reshape(mwstates, mw_inmult, ntuple(_->1, N)..., om)
 
@@ -246,7 +238,7 @@ end
 
 # I: start from 1, increased by 1 for every recursion step.
 function get_vectors_sector_!(::Val{I},
-    vecs_sector::Dict{NTuple{N, Tuple{Vararg{Int}}}, Array{BigInt, M}},
+    vecs_sector::Dict{NTuple{N, Tuple{Vararg{Int}}}, Array{Float64, M}},
     lops_blk::NTuple{N, Vector{Dict{NTuple{N, Tuple{Vararg{Int}}}, SparseMatrixCSC{Int}}}},
     ireps::NTuple{N, Irep},
     mw::NTuple{N, Tuple{Vararg{Int}}}) where {I, N, M}
@@ -282,14 +274,16 @@ function get_vectors_sector_!(::Val{I},
                                     sz1 = size(lop_blk, 1)
                                     sz_wtup = size(vecs_sector[wtup])
                                     new_size = [sz1, sz_wtup[2:I]..., w_mult, sz_wtup[I+2:end]...]
-                                    for i=I+2:M @assert new_size[i] == 1 end
-                                    vecs_sector[wt] = zeros(BigInt, new_size...)
+                                    for i=I+2:M-1 @assert new_size[i] == 1 end
+                                    vecs_sector[wt] = zeros(Float64, new_size...)
                                 end
                                 # Fill vecs_sector
-                                init_idx = [[Colon() for _=1:I]..., j, [1 for _=I+1:M]...]
-                                final_idx = [[Colon() for _=1:I]..., nzind, [1 for _=I+1:M]...]
-                                vecs_sector[wt][final_idx...] = div.(reshapeNprod(
-                                    vecs_sector[wtup][init_idx...], lop_blk), nzval)
+                                init_idx = [[Colon() for _=1:I]..., j,
+                                    [1 for _=I+2:M-1]..., Colon()]
+                                final_idx = [[Colon() for _=1:I]..., nzind,
+                                    [1 for _=I+2:M-1]..., Colon()]
+                                vecs_sector[wt][final_idx...] =
+                                    reshapeNprod(vecs_sector[wtup][init_idx...], lop_blk) ./ nzval
                                 delete!(remaining_set, nzind)
                             end
                         end
@@ -318,49 +312,86 @@ end
 tup_change_ith(::Val{I}, tup::NTuple{N, Tuple{Vararg{Int}}}, e::Tuple{Vararg{Int}}) where {N, I} = 
     tuple(tup[1:I-1]..., e, tup[I+1:end]...)
 
-function get_mwstate(already_found::Matrix{BigInt},
-    already_found_norms::Vector{BigInt},
-    start_index::Int)
+function orthonormalize_outer_multiplicity!(basis::SparseMatrixCSC{Float64},
+    ranges::Vector{Tuple{Int, Int}};
+    atol::Float64=1e-12)
+
+    om = length(ranges)
+    om <= 1 && return basis
+
+    dim = ranges[1][2] - ranges[1][1] + 1
+    @assert all(last(r) - first(r) + 1 == dim for r in ranges)
+
+    gram = zeros(Float64, om, om)
+    for i in 1:om
+        sti, edi = ranges[i]
+        block_i = basis[:, sti:edi]
+        for j in i:om
+            stj, edj = ranges[j]
+            inner = tr(Matrix(block_i' * basis[:, stj:edj])) / dim
+            gram[i, j] = inner
+            gram[j, i] = inner
+        end
+    end
+    isapprox(gram, I; atol) && return basis
+
+    transform = inv(cholesky(Symmetric(gram)).U)
+    old_blocks = [copy(basis[:, first(r):last(r)]) for r in ranges]
+    for i in 1:om
+        sti, edi = ranges[i]
+        new_block = spzeros(Float64, size(basis, 1), dim)
+        for j in 1:om
+            new_block .+= old_blocks[j] .* transform[j, i]
+        end
+        basis[:, sti:edi] = new_block
+    end
+    return basis
+end
+
+function get_mwstate(already_found::AbstractMatrix{Float64},
+    start_index::Int=1;
+    atol::Float64=1e-12)
 
     inmult = size(already_found, 1)
     nvec_found = size(already_found, 2)
-    @assert length(already_found_norms) == nvec_found
-    mwstate = zeros(BigInt, inmult)
-    found = false
-    while !found
-        innerprod_fac = 1
-        mwstate = zeros(BigInt, inmult); mwstate[start_index] = 1
+    start_index <= inmult || error("No independent maximal-weight state remains")
+
+    for seed_idx in start_index:inmult
+        mwstate = zeros(Float64, inmult)
+        mwstate[seed_idx] = 1.0
+
         for i in 1:nvec_found
-            overlap = already_found[start_index, i] * innerprod_fac
-            found_vec = already_found[:, i]
-            multfac, divfac, mwstate = orthogonalize(mwstate, 
-                found_vec, overlap, already_found_norms[i])
-            innerprod_fac *= multfac
-            facs_gcd = gcd(innerprod_fac, divfac)
-            mwstate *= div(divfac, facs_gcd)
-            innerprod_fac = div(innerprod_fac, facs_gcd)
-            if iszero(mwstate) break end
+            found_vec = view(already_found, :, i)
+            mwstate .-= dot(found_vec, mwstate) .* found_vec
         end
-        if iszero(mwstate) start_index += 1; continue
-        else found = true end
+
+        mwstate_norm = norm(mwstate)
+        if mwstate_norm <= atol
+            continue
+        end
+
+        mwstate ./= mwstate_norm
+        first_nzidx = findfirst(x -> abs(x) > atol, mwstate)
+        if first_nzidx !== nothing && mwstate[first_nzidx] < 0
+            mwstate .*= -1
+        end
+        return mwstate, seed_idx + 1
     end
-    _, mwstate = divcfac(mwstate)
-    mwstate_norm = dot(mwstate, mwstate)
-    first_nzidx = findfirst(!iszero, mwstate)
-    if mwstate[first_nzidx] < 0 mwstate = -mwstate end
-    return mwstate, start_index + 1, mwstate_norm
+
+    error("No independent maximal-weight state remains")
 end
 
 function get_orthogonal_vecs(symm::NTuple{N, Any},
     qlabels::NTuple{N, Tuple{Vararg{Int}}},
     weight::NTuple{N, Tuple{Vararg{Int}}},
-    vecs::Array{BigInt, M}) where {N, M}
+    vecs::Array{Float64, M}) where {N, M}
 
     @assert M == N + 2
     for i in 1:N
         irep = getNsave_irep(symm[i], BigInt, qlabels[i])
-        Tmat = irep.Tmats[weight[i]]
-        vecs = contract_ith(vecs, Tmat, Val(i+1))
+        a, b = irep.Sz[weight[i]]
+        outputmat = Matrix(cgt_outputmat(irep, Float64))
+        vecs = contract_ith(vecs, outputmat[a:b, a:b], Val(i+1))
     end
     return reshape(vecs, size(vecs, 1), :)
 end
@@ -509,7 +540,7 @@ function decompose_irop(symm::NTuple{N, Any},
     qlabel::NTuple{N, Tuple{Vararg{Int}}}) where N
 
     # println(mult_ind)
-    CGT_om = 0
+    CGT_om_size = 0
     data = Vector{Tuple{NTuple{3, NTuple{N, Tuple{Vararg{Int}}}}, Array{Float64, N+3}}}()
     sorted_qs = sort(collect(keys(mult_ind)); lt=rev_less_symms)
     for k1 in sorted_qs
@@ -527,23 +558,24 @@ function decompose_irop(symm::NTuple{N, Any},
                     block = irop[a1:b1, a2:b2, :]
                     if !iszero(block) 
                         # println("$(i1)th $k1, $(i2)th $k2, $qlabel, norm: $(norm(block))") 
+
+                        CGTs = [load_cg3_float(symm[i], BigInt, (k2[i], qlabel[i]), 
+                        k1[i], Float64, true)[1] for i=1:N]
+                        CGT = permutedims(reduce(⊗, CGTs), (3, 1, 2, 4))
+                        # Normalize CGT
+                        CGT /= sqrt(size(CGT, 1))
+                        CGT_oms_vec = [size(CGTs[i], 4) for i in 1:N]
+                        CGT_om_size = size(CGT, 4); @assert CGT_om_size == prod(CGT_oms_vec)
+                        @assert norm(CGT) ≈ sqrt(CGT_om_size)
+
                         if isnothing(RMT) 
-                            @assert isnothing(CGT)
-                            CGTs = [load_cg3_float(symm[i], BigInt, (k2[i], qlabel[i]), 
-                            k1[i], Float64, true)[1] for i=1:N]
-                            CGT = permutedims(reduce(⊗, CGTs), (3, 1, 2, 4))
-                            # Normalize CGT
-                            CGT /= sqrt(size(CGT, 1))
-                            CGT_oms = [size(CGTs[i], 4) for i in 1:N]
-                            CGT_om = size(CGT, 4); @assert CGT_om == prod(CGT_oms)
-                            @assert norm(CGT) ≈ sqrt(CGT_om)
-                            RMT = zeros(Float64, om1, om2, 1, CGT_oms...) 
+                            RMT = zeros(Float64, om1, om2, 1, CGT_oms_vec...) 
                         end
                         RMT[i1, i2, 1, (Colon() for _=1:N)...] = 
-                        reshape(reshape(CGT, :, CGT_om)' * block[:], CGT_oms...)
+                        reshape(reshape(CGT, :, CGT_om_size)' * block[:], CGT_oms_vec...)
 
                         # Check by reconstructing the block from CGT and RMT
-                        @assert block ≈ reshape(reshape(CGT, :, CGT_om) * 
+                        @assert block ≈ reshape(reshape(CGT, :, CGT_om_size) * 
                         RMT[i1, i2, 1, (Colon() for _=1:N)...][:], size(block))
                     end
                 end
