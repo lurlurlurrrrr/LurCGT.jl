@@ -5,7 +5,9 @@ using SparseArrays
 using SparseArrayKit
 using Combinatorics
 using TensorOperations
-using Nemo
+redirect_stdout(devnull) do
+    using Nemo
+end
 
 include("Base.jl")
 
