@@ -188,6 +188,12 @@ function get_split_sector_vectors(::Type{S},
     zeroq::NTuple{NZ, Int};
     verbose=0) where {S<:NonabelianSymm, UL, DL, UR, DR, NZ}
 
+    #println("get_split_sector_vectors for q = $q")
+    #println(left_up)
+    #println(left_dn)
+    #println(right_up)
+    #println(right_dn)
+
     dualq = get_dualq(S, q)
     center_up = stable_sort_tuple((q, dualq))
     center_dn = (zeroq,)
@@ -292,6 +298,11 @@ function getNsave_CGTSVD_stan(::Type{S},
     save, 
     verbose) where {S<:NonabelianSymm, U, D, NZ}
 
+    #println(S)
+    #println(upsp)
+    #println(dnsp)
+    #println(leftlegs)
+
     if length(leftlegs) == 0 return true 
     elseif length(leftlegs) == U + D return false end
     
@@ -301,6 +312,7 @@ function getNsave_CGTSVD_stan(::Type{S},
 
     svd_arr, bond_sps = get_split_basis_matrix(S, upsp, dnsp, leftlegs_; verbose)
     final_perm = get_cgtsvd_final_perm(S, upsp, dnsp, leftlegs_)
+    #println(final_perm)
     if final_perm != Tuple(1:(U + D))
         cgtperm = getNsave_CGTperm(S, upsp, dnsp, final_perm; save=true)
         @assert !isnothing(cgtperm)

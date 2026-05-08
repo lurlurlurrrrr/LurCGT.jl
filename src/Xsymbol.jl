@@ -163,6 +163,10 @@ function getNsave_Xsymbol(::Type{S},
     use1j=true,
     save=true) where {S<:NonabelianSymm, U1, D1, U2, D2, NZ, M}
 
+    #println("Getting X-symbol")
+    #println("CGT1: $(up1sp) → $(dn1sp), CGT2: $(up2sp) → $(dn2sp)")
+    #println("Contracted legs: CGT1 $(ctlegs1), CGT2 $(ctlegs2)")
+
     up1sp, dn1sp, ctlegs1 = standardize_spaces_and_legs(S, up1sp, dn1sp, ctlegs1, true)
     up2sp, dn2sp, ctlegs2 = standardize_spaces_and_legs(S, up2sp, dn2sp, ctlegs2, false)
     ctlegs1, ctlegs2 = _sort_contract_legs(ctlegs1, ctlegs2)
