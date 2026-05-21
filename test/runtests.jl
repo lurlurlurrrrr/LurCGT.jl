@@ -10,6 +10,7 @@ using TOML
 using DBInterface
 
 include("test_utils.jl")
+include("sqlite_cleanup.jl")
 
 function imported_packages(src_root)
     imported = Set{String}()
@@ -33,6 +34,10 @@ end
     @test isdefined(LurCGT, :SU)
     @test isdefined(LurCGT, :getNsave_irep)
     @test isabelian(U1)
+    @test :merge_all_to_global in names(LurCGT)
+    @test :merge_table_to_global in names(LurCGT)
+    @test :sqlite_stats in names(LurCGT)
+    @test :delete_closed_local_sqlite_dbs in names(LurCGT)
 end
 
 @testset "SQLite environment overrides" begin
@@ -252,4 +257,3 @@ end
     LurCGT.merge_all_to_global(SU{2})
     LurCGT.merge_all_to_global(SU{3})
 end
-

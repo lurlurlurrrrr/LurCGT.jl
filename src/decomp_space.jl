@@ -53,7 +53,7 @@ function add_vectors!(ortho_vecs_sparse::SparseMatrixCSC{Float64},
 end
 
 function add_irops!(irop_3d::SparseArray{Float64, 3},
-    irops::Array{SparseMatrixCSC{Int}, N},
+    irops::Array{SparseMatrixCSC{Float64}, N},
     si::Int,
     reps::NTuple{N, Irep},
     w::NTuple{N, Tuple{Vararg{Int}}}) where N
@@ -603,7 +603,7 @@ end
 function getweight_irop(::Type{S},
     z_ops::Vector{<:Tuple{Vararg{Int}}},
     lowering_ops::Vector{<:AbstractMatrix{Int}},
-    mwirop::AbstractMatrix{<:Integer}) where S<:Symmetry
+    mwirop::AbstractMatrix{<:Real}) where S<:Symmetry
 
     # Get the qlabel of the maximal weight operator in the multiplet that mwirop belongs to
     NZ = nzops(S); @assert NZ == length(z_ops[1])
@@ -611,25 +611,25 @@ function getweight_irop(::Type{S},
     zops_diags = [[z_ops[i][j] for i=1:length(z_ops)] for j=1:NZ]
     zops = [diagm(zops_diags[j]) for j=1:NZ]
     comm_result = [comm(zops[j], mwirop) for j=1:NZ]
-    zvals = Tuple(div(comm_result[i][nzidx], mwirop[nzidx]) for i=1:NZ)
-    for i=1:NZ @assert comm_result[i] == zvals[i] * mwirop end
+    zvals = Tuple(round(Int, comm_result[i][nzidx] / mwirop[nzidx]) for i=1:NZ)
+    for i=1:NZ @assert comm_result[i] ≈ zvals[i] * mwirop end
     return zvals
 end
 
 function get_irops_sector(ireps::NTuple{N, Irep},
     lowering_ops::NTuple{N, Vector{<:AbstractMatrix{Int}}},
-    mwirop::AbstractMatrix{<:Integer},
+    mwirop::AbstractMatrix{<:Real},
     mw::NTuple{N, Tuple{Vararg{Int}}}) where N
 
-    irops_sector = Dict{NTuple{N, Tuple{Vararg{Int}}}, Array{SparseMatrixCSC{Int}, N}}()
-    irops_sector[mw] = reshape([mwirop], ntuple((_->1, N)...))
+    irops_sector = Dict{NTuple{N, Tuple{Vararg{Int}}}, Array{SparseMatrixCSC{Float64}, N}}()
+    irops_sector[mw] = reshape([sparse(Float64.(mwirop))], ntuple((_->1, N)...))
 
     get_irops_sector_!(Val(1), irops_sector, lowering_ops, ireps, mw)
     return irops_sector
 end
 
 function get_irops_sector_!(::Val{I},
-    irops_sector::Dict{NTuple{N, Tuple{Vararg{Int}}}, Array{SparseMatrixCSC{Int}, N}},
+    irops_sector::Dict{NTuple{N, Tuple{Vararg{Int}}}, Array{SparseMatrixCSC{Float64}, N}},
     lowering_ops::NTuple{N, Vector{<:AbstractMatrix{Int}}},
     ireps::NTuple{N, Irep},
     mw::NTuple{N, Tuple{Vararg{Int}}}) where {I, N}
@@ -664,18 +664,18 @@ function get_irops_sector_!(::Val{I},
                                     sz_wtup = size(irops_sector[wtup])
                                     new_size = [sz_wtup[1:I-1]..., w_mult, sz_wtup[I+1:end]...]
                                     for i=I+1:N @assert new_size[i] == 1 end
-                                    irops_sector[wt] = Array{SparseMatrixCSC{Int}, N}(undef, new_size...)
+                                    irops_sector[wt] = Array{SparseMatrixCSC{Float64}, N}(undef, new_size...)
                                 end
                                 if N == 1
                                     comm_res = comm(lop, irops_sector[wtup][j])
-                                    irops_sector[wt][nzind] = div.(comm_res, nzval)
+                                    irops_sector[wt][nzind] = comm_res ./ nzval
                                 else
                                     slice = [[Colon() for _=1:I-1]..., j, [[1] for _=I+1:N]...]
                                     for idx in CartesianIndices(irops_sector[wtup][slice...])
                                         idx_init = [idx.I..., j, [1 for _=I+1:N]...]
                                         idx_final = [idx.I..., nzind, [1 for _=I+1:N]...]
                                         comm_res = comm(lop, irops_sector[wtup][idx_init...])
-                                        irops_sector[wt][idx_final...] = div.(comm_res, nzval)
+                                        irops_sector[wt][idx_final...] = comm_res ./ nzval
                                     end
                                 end
                                 delete!(remaining_set, nzind)
@@ -699,7 +699,7 @@ end
 function get_IROP(symm::NTuple{N, Any},
     z_ops::NTuple{N, Vector{<:Tuple{Vararg{Int}}}},
     lowering_ops::NTuple{N, Vector{<:AbstractMatrix{Int}}},
-    mwirop::AbstractMatrix{<:Integer}) where N
+    mwirop::AbstractMatrix{<:Real}) where N
 
     #println(symm)
     #for ls in lowering_ops for lop in ls display(Matrix(lop)) end end

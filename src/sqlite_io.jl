@@ -59,6 +59,17 @@ end
 
 _resolve_storage_dir(path::AbstractString) = normpath(abspath(expanduser(path)))
 
+"""
+    sqlite_run_mode([env])
+
+Return the active SQLite storage mode, either `"local"` or `"server"`.
+
+The mode is read from `LURCGT_RUN_MODE`; unset means `"local"`.  In `"local"`
+mode, LurCGT reads and writes directly under `LURCGT_LOCALDB_DIR` and
+`LURCGT_GLOBALDB_DIR`.  In `"server"` mode, active database files are placed
+under the node-local directories and copied from source directories on first
+open.
+"""
 function sqlite_run_mode(env::AbstractDict=ENV)
     mode = lowercase(something(_nonempty_env_value(env, "LURCGT_RUN_MODE"), "local"))
     mode in ("local", "server") ||
@@ -82,12 +93,43 @@ sqlite_global_node_dir(env::AbstractDict=ENV) =
     _resolve_storage_dir(something(_nonempty_env_value(env, "LURCGT_GLOBALDB_DIR_NODE"),
                                    sqlite_global_source_dir(env)))
 
+"""
+    sqlite_local_dir([env])
+
+Return the directory used for process-local SQLite databases in the active run
+mode.
+
+Local databases are stored as one database per symmetry and process id, for
+example `joinpath(sqlite_local_dir(), "SU2", "\$(process_local_id()).db")`.
+Set `LURCGT_LOCALDB_DIR` to choose the source/local directory, and
+`LURCGT_LOCALDB_DIR_NODE` to choose the active node-local directory in
+`LURCGT_RUN_MODE=server`.
+"""
 sqlite_local_dir(env::AbstractDict=ENV) =
     sqlite_run_mode(env) == "server" ? sqlite_local_node_dir(env) : sqlite_local_source_dir(env)
 
+"""
+    sqlite_global_dir([env])
+
+Return the directory used for shared global SQLite databases in the active run
+mode.
+
+Global databases are stored as one database per symmetry, for example
+`joinpath(sqlite_global_dir(), "SU2.db")`.  Set `LURCGT_GLOBALDB_DIR` to choose
+the source/global directory, and `LURCGT_GLOBALDB_DIR_NODE` to choose the active
+node-local directory in `LURCGT_RUN_MODE=server`.
+"""
 sqlite_global_dir(env::AbstractDict=ENV) =
     sqlite_run_mode(env) == "server" ? sqlite_global_node_dir(env) : sqlite_global_source_dir(env)
 
+"""
+    sqlite_lock_dir([env])
+
+Return the directory used for cross-process SQLite merge locks.
+
+Merge operations create lock files here so concurrent jobs can safely call
+`merge_table_to_global` or `merge_all_to_global` for the same symmetry.
+"""
 sqlite_lock_dir(env::AbstractDict=ENV) = joinpath(sqlite_global_dir(env), "locks")
 
 function sqlite_db_source_path(::Type{S}, location::Symbol=:local;
@@ -586,9 +628,21 @@ end
 # ============================================================================
 
 """
-Merge local database into global database for a specific table.
-Uses file-based locking for cross-process coordination.
-Uses INSERT OR IGNORE in a transaction for efficiency.
+    merge_table_to_global(S, table_name[, filter_prefix]; clear_local_after=true, verbose=1)
+
+Merge entries for one SQLite table from the current process-local database into
+the shared global database for symmetry `S`.
+
+`table_name` must be one of the internal cache tables, for example `"irreps"`,
+`"cgt"`, `"xsymbol"`, `"cgtperm"`, or `"cgtsvd"`.  If `filter_prefix` is
+provided, only rows whose key starts with that prefix are merged.
+
+The merge is protected by a file lock under `sqlite_lock_dir()` so multiple
+processes can merge safely.  Rows are inserted with `INSERT OR IGNORE`; existing
+global rows are counted as skipped.  When `clear_local_after=true`, successfully
+merged rows are removed from the local table.
+
+Returns a named tuple `(merged=..., skipped=...)`.
 """
 function merge_table_to_global(::Type{S}, table_name::String, filter_prefix::String="";
                                clear_local_after::Bool=true,
@@ -668,7 +722,19 @@ function merge_table_to_global(::Type{S}, table_name::String, filter_prefix::Str
     end
 end
 
-"""Merge all tables to global for a symmetry."""
+"""
+    merge_all_to_global(S; tables=collect(SQLITE_TABLES), clear_local_after=true, verbose=1)
+
+Merge all selected SQLite cache tables from the current process-local database
+into the shared global database for symmetry `S`.
+
+This is the usual user-facing merge operation after a local run has generated
+irreps, CGTs, F/R/X symbols, CGT permutations, or CGTSVD data.  Pass `tables` to
+merge only selected tables.  Each table is merged by `merge_table_to_global`, so
+cross-process locking and `clear_local_after` behavior are the same.
+
+Returns a named tuple `(merged=..., skipped=...)` with totals across tables.
+"""
 function merge_all_to_global(::Type{S};
                              tables=collect(SQLITE_TABLES),
                              clear_local_after::Bool=true,
@@ -709,6 +775,16 @@ function list_ireps_sqlite(::Type{S}, ::Type{RT}; location::Symbol=:local) where
     return keys
 end
 
+"""
+    sqlite_stats(S; location=:local)
+
+Print a short summary of the SQLite cache database for symmetry `S`.
+
+`location` may be `:local` for the current process-local database or `:global`
+for the shared database.  The report lists non-empty table counts and the
+database file size.  Calling this function opens the requested database if it is
+not already open.
+"""
 function sqlite_stats(::Type{S}; location::Symbol=:local) where {S<:NonabelianSymm}
     db = get_sqlite_db(S, location)
     loc_str = location == :global ? "Global" : "Local ($(process_local_id()))"
@@ -743,6 +819,15 @@ const _ALL_CACHES = (
     (CG3FLIP_CACHE, CG3FLIP_CACHE_LOCK),
 )
 
+"""
+    clear_sqlite_cache!()
+
+Clear all in-memory LRU caches used by the SQLite-backed object store.
+
+This does not delete any SQLite database files and does not close database
+connections.  It is useful when measuring memory use, forcing subsequent loads
+to come from SQLite, or after manually changing database contents.
+"""
 function clear_sqlite_cache!()
     for (cache, cache_lock) in _ALL_CACHES
         Base.lock(cache_lock) do
@@ -754,6 +839,90 @@ end
 # Backward compatibility
 clear_irep_sqlite_cache!() = clear_sqlite_cache!()
 
+_sqlite_file_set(path::AbstractString) = (String(path), string(path, "-wal"), string(path, "-shm"))
+
+function _sqlite_db_base_path(path::AbstractString)
+    path_str = String(path)
+    endswith(path_str, ".db") && return path_str
+    endswith(path_str, ".db-wal") && return path_str[1:end-4]
+    endswith(path_str, ".db-shm") && return path_str[1:end-4]
+    return nothing
+end
+
+function _opened_local_sqlite_paths()
+    opened_paths = Set{String}()
+    Base.lock(SQLITE_DB_LOCK) do
+        for (key, db) in SQLITE_DBS
+            startswith(key, "local:") || continue
+            push!(opened_paths, normpath(abspath(db.file)))
+        end
+    end
+    return opened_paths
+end
+
+function _local_sqlite_db_paths(root::AbstractString)
+    isdir(root) || return String[]
+
+    paths = Set{String}()
+    for (dir, _, files) in walkdir(root)
+        for file in files
+            base_path = _sqlite_db_base_path(joinpath(dir, file))
+            base_path === nothing && continue
+            push!(paths, normpath(abspath(base_path)))
+        end
+    end
+    return sort!(collect(paths))
+end
+
+"""
+    delete_closed_local_sqlite_dbs(; env=ENV, verbose=0)
+
+Delete local SQLite database files that are not currently open in this Julia
+process.
+
+The function scans the configured local database root `sqlite_local_dir(env)`.
+For each closed database, it removes the base `.db` file and any `-wal`/`-shm`
+sidecar files.  Databases currently tracked by `get_sqlite_db(..., :local)` in
+this process are skipped.
+
+Returns the base `.db` paths that were removed.  This only considers local
+databases; global databases are never deleted.
+"""
+function delete_closed_local_sqlite_dbs(; env::AbstractDict=ENV, verbose=0)
+    root = sqlite_local_dir(env)
+    opened_paths = _opened_local_sqlite_paths()
+    deleted_paths = String[]
+
+    for path in _local_sqlite_db_paths(root)
+        path in opened_paths && continue
+
+        deleted_any = false
+        for file in _sqlite_file_set(path)
+            isfile(file) || continue
+            rm(file; force=true)
+            deleted_any = true
+        end
+
+        if deleted_any
+            push!(deleted_paths, path)
+            verbose > 0 && println("Deleted local SQLite DB: $(path)")
+        end
+    end
+
+    return deleted_paths
+end
+
+"""
+    close_all_sqlite_dbs()
+
+Close all SQLite database connections currently open in this Julia process.
+
+This clears LurCGT's open-connection registry but does not clear the in-memory
+object caches and does not delete any database files.  Use it before changing
+SQLite-related environment variables in the same process, or before calling
+`delete_closed_local_sqlite_dbs` when you want the current local databases to be
+eligible for deletion.
+"""
 function close_all_sqlite_dbs()
     Base.lock(SQLITE_DB_LOCK) do
         for (_, db) in SQLITE_DBS
@@ -766,4 +935,3 @@ end
 function __init__()
     PROCESS_LOCAL_ID[] = build_process_local_id()
 end
-
