@@ -38,6 +38,10 @@ end
     @test :merge_table_to_global in names(LurCGT)
     @test :sqlite_stats in names(LurCGT)
     @test :delete_closed_local_sqlite_dbs in names(LurCGT)
+    conjperm = getNsave_Conjperm(SU{2}, ((1,), (1,)))
+    @test conjperm isa Conjperm
+    @test conjperm === getNsave_Conjperm(SU{2}, ((1,), (1,)))
+    @test conjperm.perm == get_conj_perm(get_CGTom(SU{2}, ((1,), (1,)), ((1,), (1,))))
 end
 
 @testset "SQLite environment overrides" begin

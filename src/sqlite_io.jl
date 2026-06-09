@@ -45,6 +45,9 @@ const VALIDOUT_CACHE_LOCK = ReentrantLock()
 const CGTPERM_CACHE = LRU{String, Any}(maxsize=20*1024*1024, by=x -> x.size_byte)
 const CGTPERM_CACHE_LOCK = ReentrantLock()
 
+const CONJPERM_CACHE = LRU{String, Any}(maxsize=20*1024*1024, by=x -> x.size_byte)
+const CONJPERM_CACHE_LOCK = ReentrantLock()
+
 const CGTSVD_CACHE = LRU{String, Any}(maxsize=20*1024*1024, by=x -> x.size_byte)
 const CGTSVD_CACHE_LOCK = ReentrantLock()
 
@@ -208,7 +211,7 @@ process_local_id(env::AbstractDict; hostname::AbstractString=gethostname(), pid:
 
 # All table names (created at DB init)
 const SQLITE_TABLES = ("irreps", "cgt", "fsymbol", "rsymbol", "xsymbol",
-                        "omlist", "validout", "cgtperm", "cgtsvd", "cg3flip")
+                        "omlist", "validout", "cgtperm", "conjperm", "cgtsvd", "cg3flip")
 
 # ============================================================================
 # Database Management
@@ -409,6 +412,11 @@ function cgtperm_key(::Type{S}, upsp::Tuple, dnsp::Tuple, perm::NTuple{N, Int}) 
     return "cgtperm_$(totxt(S))_$(join(up_strs, "_")),$(join(dn_strs, "_")),$(join(perm, "_"))"
 end
 
+function conjperm_key(::Type{S}, upsp::Tuple) where {S<:Symmetry}
+    up_strs = [join(q, "_") for q in upsp]
+    return "conjperm_$(totxt(S))_$(join(up_strs, "_"))"
+end
+
 function cgtsvd_key(::Type{S},
     upsp::NTuple{U, NTuple{NZ, Int}},
     dnsp::NTuple{D, NTuple{NZ, Int}},
@@ -583,6 +591,24 @@ function load_CGTperm_sqlite(::Type{S},
     verbose=0) where {S<:NonabelianSymm, U, D, N, NZ}
     key = cgtperm_key(S, upsp, dnsp, perm)
     return _cached_load(S, "cgtperm", key, key, CGTPERM_CACHE, CGTPERM_CACHE_LOCK; verbose)
+end
+
+# --- Conjperm ---
+
+function save_Conjperm_sqlite(conjperm::Conjperm{S, U, NZ}; verbose=0) where {S<:NonabelianSymm, U, NZ}
+    save_Conjperm_sqlite(S, conjperm; verbose)
+end
+
+function save_Conjperm_sqlite(::Type{S}, conjperm; verbose=0) where {S<:NonabelianSymm}
+    key = conjperm_key(S, conjperm.upsp)
+    _cached_save(S, "conjperm", key, key, conjperm, CONJPERM_CACHE, CONJPERM_CACHE_LOCK; verbose)
+end
+
+function load_Conjperm_sqlite(::Type{S},
+    upsp::NTuple{U, NTuple{NZ, Int}};
+    verbose=0) where {S<:NonabelianSymm, U, NZ}
+    key = conjperm_key(S, upsp)
+    return _cached_load(S, "conjperm", key, key, CONJPERM_CACHE, CONJPERM_CACHE_LOCK; verbose)
 end
 
 # --- CGTSVD ---
