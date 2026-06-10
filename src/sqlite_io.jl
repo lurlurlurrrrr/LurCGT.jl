@@ -21,37 +21,37 @@ const SQLITE_DBS = Dict{String, SQLite.DB}()
 const SQLITE_DB_LOCK = ReentrantLock()
 
 # Per-type LRU caches (sized to match typical object sizes)
-const IREP_CACHE = LRU{String, Any}(maxsize=100*1024*1024, by=x -> x.size_byte)
+const IREP_CACHE = LRU{Tuple, Any}(maxsize=100*1024*1024, by=x -> x.size_byte)
 const IREP_CACHE_LOCK = ReentrantLock()
 
-const CGT_CACHE = LRU{String, Any}(maxsize=200*1024*1024, by=x -> x.size_byte)
+const CGT_CACHE = LRU{Tuple, Any}(maxsize=200*1024*1024, by=x -> x.size_byte)
 const CGT_CACHE_LOCK = ReentrantLock()
 
-const FSYMBOL_CACHE = LRU{String, Any}(maxsize=10*1024*1024, by=x -> x.size_byte)
+const FSYMBOL_CACHE = LRU{Tuple, Any}(maxsize=10*1024*1024, by=x -> x.size_byte)
 const FSYMBOL_CACHE_LOCK = ReentrantLock()
 
-const RSYMBOL_CACHE = LRU{String, Any}(maxsize=10*1024*1024, by=x -> x.size_byte)
+const RSYMBOL_CACHE = LRU{Tuple, Any}(maxsize=10*1024*1024, by=x -> x.size_byte)
 const RSYMBOL_CACHE_LOCK = ReentrantLock()
 
-const XSYMBOL_CACHE = LRU{String, Any}(maxsize=50*1024*1024, by=x -> x.size_byte)
+const XSYMBOL_CACHE = LRU{Tuple, Any}(maxsize=50*1024*1024, by=x -> x.size_byte)
 const XSYMBOL_CACHE_LOCK = ReentrantLock()
 
-const OMLIST_CACHE = LRU{String, Any}(maxsize=10*1024*1024, by=x -> x.size_byte)
+const OMLIST_CACHE = LRU{Tuple, Any}(maxsize=10*1024*1024, by=x -> x.size_byte)
 const OMLIST_CACHE_LOCK = ReentrantLock()
 
-const VALIDOUT_CACHE = LRU{String, Any}(maxsize=10*1024*1024, by=x -> x.size_byte)
+const VALIDOUT_CACHE = LRU{Tuple, Any}(maxsize=10*1024*1024, by=x -> x.size_byte)
 const VALIDOUT_CACHE_LOCK = ReentrantLock()
 
-const CGTPERM_CACHE = LRU{String, Any}(maxsize=20*1024*1024, by=x -> x.size_byte)
+const CGTPERM_CACHE = LRU{Tuple, Any}(maxsize=20*1024*1024, by=x -> x.size_byte)
 const CGTPERM_CACHE_LOCK = ReentrantLock()
 
-const CONJPERM_CACHE = LRU{String, Any}(maxsize=20*1024*1024, by=x -> x.size_byte)
+const CONJPERM_CACHE = LRU{Tuple, Any}(maxsize=20*1024*1024, by=x -> x.size_byte)
 const CONJPERM_CACHE_LOCK = ReentrantLock()
 
-const CGTSVD_CACHE = LRU{String, Any}(maxsize=20*1024*1024, by=x -> x.size_byte)
+const CGTSVD_CACHE = LRU{Tuple, Any}(maxsize=20*1024*1024, by=x -> x.size_byte)
 const CGTSVD_CACHE_LOCK = ReentrantLock()
 
-const CG3FLIP_CACHE = LRU{String, Any}(maxsize=20*1024*1024, by=x -> x.size_byte)
+const CG3FLIP_CACHE = LRU{Tuple, Any}(maxsize=20*1024*1024, by=x -> x.size_byte)
 const CG3FLIP_CACHE_LOCK = ReentrantLock()
 
 function _nonempty_env_value(env::AbstractDict, key::AbstractString)
@@ -320,7 +320,7 @@ end
 # ============================================================================
 
 """Save object to DB and update the given cache."""
-function _cached_save(::Type{S}, table_name::String, db_key::String, cache_key::String, obj,
+function _cached_save(::Type{S}, table_name::String, db_key::String, cache_key::Tuple, obj,
                       cache::LRU, cache_lock::ReentrantLock;
                       verbose=0) where {S<:NonabelianSymm}
     save_object_sqlite(S, table_name, db_key, obj; verbose)
@@ -331,9 +331,9 @@ function _cached_save(::Type{S}, table_name::String, db_key::String, cache_key::
 end
 
 """Load object from the given cache, falling back to DB. Updates cache on DB hit."""
-function _cached_load(::Type{S}, table_name::String, db_key::String, cache_key::String,
+function _cached_load(db_key_func::F, ::Type{S}, table_name::String, cache_key::Tuple,
                       cache::LRU, cache_lock::ReentrantLock;
-                      verbose=0) where {S<:NonabelianSymm}
+                      verbose=0) where {F, S<:NonabelianSymm}
     # 1. Check cache
     cached = Base.lock(cache_lock) do
         get(cache, cache_key, nothing)
@@ -341,6 +341,7 @@ function _cached_load(::Type{S}, table_name::String, db_key::String, cache_key::
     cached !== nothing && return cached
 
     # 2. Load from DB
+    db_key = db_key_func()
     result = load_object_sqlite(S, table_name, db_key; verbose)
 
     # 3. Update cache on hit
@@ -434,6 +435,62 @@ function cg3flip_key(::Type{S},
     return "cg3flip_$(totxt(S))_$(CT)_$(join(in1,"_"))_$(join(in2,"_"))_$(join(out_space,"_"))"
 end
 
+# In-memory cache keys avoid constructing the SQLite string key on cache hits.
+irep_cache_key(::Type{S}, ::Type{RT}, qlabel::NTuple{NZ, Int}) where {S<:Symmetry, RT, NZ} =
+    (S, RT, qlabel)
+
+cgt_cache_key(::Type{S}, ::Type{CT},
+    qlabels::NTuple{N, NTuple{NZ, Int}}) where {S<:Symmetry, CT, NZ, N} =
+    (S, CT, qlabels)
+
+fsymbol_cache_key(::Type{S}, ::Type{CT}, in1::NTuple{NZ,Int}, in2::NTuple{NZ,Int},
+                  in3::NTuple{NZ,Int}, out::NTuple{NZ,Int}) where {S<:Symmetry, CT, NZ} =
+    (S, CT, in1, in2, in3, out)
+
+rsymbol_cache_key(::Type{S}, ::Type{CT}, in::NTuple{NZ,Int}, out::NTuple{NZ,Int}) where {S<:Symmetry, CT, NZ} =
+    (S, CT, in, out)
+
+xsymbol_cache_key(::Type{S},
+    up1::NTuple{U1, NTuple{NZ, Int}},
+    dn1::NTuple{D1, NTuple{NZ, Int}},
+    up2::NTuple{U2, NTuple{NZ, Int}},
+    dn2::NTuple{D2, NTuple{NZ, Int}},
+    legs1::NTuple{M, Int},
+    legs2::NTuple{M, Int}) where {S<:Symmetry, NZ, U1, D1, U2, D2, M} =
+    (S, up1, dn1, up2, dn2, legs1, legs2)
+
+omlist_cache_key(::Type{S},
+    qs::NTuple{N, NTuple{NZ, Int}},
+    outsp::NTuple{NZ, Int}) where {S<:Symmetry, N, NZ} =
+    (S, qs, outsp)
+
+validout_cache_key(::Type{S},
+    qs::NTuple{N, NTuple{NZ, Int}}) where {S<:Symmetry, N, NZ} =
+    (S, _sorted_qs_tuple(qs))
+
+function _sorted_qs_tuple(qs::NTuple{N, T}) where {N, T}
+    sorted_qs = sort!(collect(qs))
+    return ntuple(i -> sorted_qs[i], Val(N))
+end
+
+cgtperm_cache_key(::Type{S}, upsp::Tuple, dnsp::Tuple, perm::NTuple{N, Int}) where {S<:Symmetry, N} =
+    (S, upsp, dnsp, perm)
+
+conjperm_cache_key(::Type{S}, upsp::Tuple) where {S<:Symmetry} =
+    (S, upsp)
+
+cgtsvd_cache_key(::Type{S},
+    upsp::NTuple{U, NTuple{NZ, Int}},
+    dnsp::NTuple{D, NTuple{NZ, Int}},
+    leftlegs::NTuple{L, Int}) where {S<:Symmetry, U, D, NZ, L} =
+    (S, upsp, dnsp, leftlegs)
+
+cg3flip_cache_key(::Type{S},
+    ::Type{CT},
+    incom_spaces::NTuple{2, NTuple{NZ, Int}},
+    out_space::NTuple{NZ, Int}) where {S<:Symmetry, CT<:Number, NZ} =
+    (S, CT, incom_spaces, out_space)
+
 # ============================================================================
 # Type-Specific Save/Load Functions
 # ============================================================================
@@ -442,15 +499,14 @@ end
 
 function save_irep_sqlite(rep::Irep{S, NL, NZ, RT}; verbose=0) where {S, NL, NZ, RT}
     key = irep_key(S, RT, rep.qlabel)
-    cache_key = "$(S)_$(RT)_$(join(rep.qlabel, "_"))"
+    cache_key = irep_cache_key(S, RT, rep.qlabel)
     _cached_save(S, "irreps", key, cache_key, rep, IREP_CACHE, IREP_CACHE_LOCK; verbose)
 end
 
 function load_irep_sqlite(::Type{S}, ::Type{RT}, qlabel::NTuple{NZ, Int};
                           verbose=0) where {S<:NonabelianSymm, RT<:Number, NZ}
-    key = irep_key(S, RT, qlabel)
-    cache_key = "$(S)_$(RT)_$(join(qlabel, "_"))"
-    return _cached_load(S, "irreps", key, cache_key, IREP_CACHE, IREP_CACHE_LOCK; verbose)
+    cache_key = irep_cache_key(S, RT, qlabel)
+    return _cached_load(() -> irep_key(S, RT, qlabel), S, "irreps", cache_key, IREP_CACHE, IREP_CACHE_LOCK; verbose)
 end
 
 # --- CGT ---
@@ -459,7 +515,7 @@ function save_cgt_sqlite(::Type{S},
     cgt::CGT{S, CT, NZ, N};
     verbose=0) where {S<:NonabelianSymm, CT<:Number, NZ, N}
     key = cgt_key(S, CT, cgt.qlabels)
-    cache_key = "$(S)_$(CT)_$(join([join(q, "_") for q in cgt.qlabels], "__"))"
+    cache_key = cgt_cache_key(S, CT, cgt.qlabels)
     _cached_save(S, "cgt", key, cache_key, cgt, CGT_CACHE, CGT_CACHE_LOCK; verbose)
 end
 
@@ -467,9 +523,8 @@ function load_cgt_sqlite(::Type{S},
     ::Type{CT},
     qlabels::NTuple{N, NTuple{NZ,Int}};
     verbose=0) where {S<:NonabelianSymm, CT, NZ, N}
-    key = cgt_key(S, CT, qlabels)
-    cache_key = "$(S)_$(CT)_$(join([join(q, "_") for q in qlabels], "__"))"
-    return _cached_load(S, "cgt", key, cache_key, CGT_CACHE, CGT_CACHE_LOCK; verbose)
+    cache_key = cgt_cache_key(S, CT, qlabels)
+    return _cached_load(() -> cgt_key(S, CT, qlabels), S, "cgt", cache_key, CGT_CACHE, CGT_CACHE_LOCK; verbose)
 end
 
 # --- Fsymbol ---
@@ -481,16 +536,15 @@ end
 function save_Fsymbol_sqlite(::Type{S}, fsym; verbose=0) where {S<:NonabelianSymm}
     CT = eltype(fsym)
     key = fsymbol_key(S, CT, fsym.in1, fsym.in2, fsym.in3, fsym.out)
-    cache_key = "$(S)_$(CT)_$(join(fsym.in1,"_"))_$(join(fsym.in2,"_"))_$(join(fsym.in3,"_"))_$(join(fsym.out,"_"))"
+    cache_key = fsymbol_cache_key(S, CT, fsym.in1, fsym.in2, fsym.in3, fsym.out)
     _cached_save(S, "fsymbol", key, cache_key, fsym, FSYMBOL_CACHE, FSYMBOL_CACHE_LOCK; verbose)
 end
 
 function load_Fsymbol_sqlite(::Type{S}, ::Type{CT}, in1::NTuple{NZ,Int}, in2::NTuple{NZ,Int},
                             in3::NTuple{NZ,Int}, out::NTuple{NZ,Int};
                             verbose=0) where {S<:NonabelianSymm, CT, NZ}
-    key = fsymbol_key(S, CT, in1, in2, in3, out)
-    cache_key = "$(S)_$(CT)_$(join(in1,"_"))_$(join(in2,"_"))_$(join(in3,"_"))_$(join(out,"_"))"
-    return _cached_load(S, "fsymbol", key, cache_key, FSYMBOL_CACHE, FSYMBOL_CACHE_LOCK; verbose)
+    cache_key = fsymbol_cache_key(S, CT, in1, in2, in3, out)
+    return _cached_load(() -> fsymbol_key(S, CT, in1, in2, in3, out), S, "fsymbol", cache_key, FSYMBOL_CACHE, FSYMBOL_CACHE_LOCK; verbose)
 end
 
 # --- Rsymbol ---
@@ -502,15 +556,14 @@ end
 function save_Rsymbol_sqlite(::Type{S}, rsym; verbose=0) where {S<:NonabelianSymm}
     CT = eltype(rsym)
     key = rsymbol_key(S, CT, rsym.in, rsym.out)
-    cache_key = "$(S)_$(CT)_$(join(rsym.in,"_"))_$(join(rsym.out,"_"))"
+    cache_key = rsymbol_cache_key(S, CT, rsym.in, rsym.out)
     _cached_save(S, "rsymbol", key, cache_key, rsym, RSYMBOL_CACHE, RSYMBOL_CACHE_LOCK; verbose)
 end
 
 function load_Rsymbol_sqlite(::Type{S}, ::Type{CT}, in::NTuple{NZ,Int}, out::NTuple{NZ,Int};
                             verbose=0) where {S<:NonabelianSymm, CT, NZ}
-    key = rsymbol_key(S, CT, in, out)
-    cache_key = "$(S)_$(CT)_$(join(in,"_"))_$(join(out,"_"))"
-    return _cached_load(S, "rsymbol", key, cache_key, RSYMBOL_CACHE, RSYMBOL_CACHE_LOCK; verbose)
+    cache_key = rsymbol_cache_key(S, CT, in, out)
+    return _cached_load(() -> rsymbol_key(S, CT, in, out), S, "rsymbol", cache_key, RSYMBOL_CACHE, RSYMBOL_CACHE_LOCK; verbose)
 end
 
 # --- Xsymbol ---
@@ -521,7 +574,8 @@ end
 
 function save_Xsymbol_sqlite(::Type{S}, xsym; verbose=0) where {S<:NonabelianSymm}
     key = xsymbol_key(S, xsym.up1sp, xsym.dn1sp, xsym.up2sp, xsym.dn2sp, xsym.legs1, xsym.legs2)
-    _cached_save(S, "xsymbol", key, key, xsym, XSYMBOL_CACHE, XSYMBOL_CACHE_LOCK; verbose)
+    cache_key = xsymbol_cache_key(S, xsym.up1sp, xsym.dn1sp, xsym.up2sp, xsym.dn2sp, xsym.legs1, xsym.legs2)
+    _cached_save(S, "xsymbol", key, cache_key, xsym, XSYMBOL_CACHE, XSYMBOL_CACHE_LOCK; verbose)
 end
 
 function load_Xsymbol_sqlite(::Type{S},
@@ -532,8 +586,8 @@ function load_Xsymbol_sqlite(::Type{S},
     legs1::NTuple{M, Int},
     legs2::NTuple{M, Int};
     verbose=0) where {S<:NonabelianSymm, NZ, U1, D1, U2, D2, M}
-    key = xsymbol_key(S, up1, dn1, up2, dn2, legs1, legs2)
-    return _cached_load(S, "xsymbol", key, key, XSYMBOL_CACHE, XSYMBOL_CACHE_LOCK; verbose)
+    cache_key = xsymbol_cache_key(S, up1, dn1, up2, dn2, legs1, legs2)
+    return _cached_load(() -> xsymbol_key(S, up1, dn1, up2, dn2, legs1, legs2), S, "xsymbol", cache_key, XSYMBOL_CACHE, XSYMBOL_CACHE_LOCK; verbose)
 end
 
 # --- OMList ---
@@ -544,15 +598,16 @@ end
 
 function save_omlist_sqlite(::Type{S}, omlist; verbose=0) where {S<:NonabelianSymm}
     key = omlist_key(S, omlist.incom_spaces, omlist.out_space)
-    _cached_save(S, "omlist", key, key, omlist, OMLIST_CACHE, OMLIST_CACHE_LOCK; verbose)
+    cache_key = omlist_cache_key(S, omlist.incom_spaces, omlist.out_space)
+    _cached_save(S, "omlist", key, cache_key, omlist, OMLIST_CACHE, OMLIST_CACHE_LOCK; verbose)
 end
 
 function load_omlist_sqlite(::Type{S},
     qs::NTuple{N, NTuple{NZ, Int}},
     outsp::NTuple{NZ, Int};
     verbose=0) where {S<:NonabelianSymm, N, NZ}
-    key = omlist_key(S, qs, outsp)
-    return _cached_load(S, "omlist", key, key, OMLIST_CACHE, OMLIST_CACHE_LOCK; verbose)
+    cache_key = omlist_cache_key(S, qs, outsp)
+    return _cached_load(() -> omlist_key(S, qs, outsp), S, "omlist", cache_key, OMLIST_CACHE, OMLIST_CACHE_LOCK; verbose)
 end
 
 # --- ValidOuts ---
@@ -563,14 +618,15 @@ end
 
 function save_validout_sqlite(::Type{S}, validout; verbose=0) where {S<:NonabelianSymm}
     key = validout_key(S, validout.incom_spaces)
-    _cached_save(S, "validout", key, key, validout, VALIDOUT_CACHE, VALIDOUT_CACHE_LOCK; verbose)
+    cache_key = validout_cache_key(S, validout.incom_spaces)
+    _cached_save(S, "validout", key, cache_key, validout, VALIDOUT_CACHE, VALIDOUT_CACHE_LOCK; verbose)
 end
 
 function load_validout_sqlite(::Type{S},
     qs::NTuple{N, NTuple{NZ, Int}};
     verbose=0) where {S<:NonabelianSymm, N, NZ}
-    key = validout_key(S, qs)
-    return _cached_load(S, "validout", key, key, VALIDOUT_CACHE, VALIDOUT_CACHE_LOCK; verbose)
+    cache_key = validout_cache_key(S, qs)
+    return _cached_load(() -> validout_key(S, qs), S, "validout", cache_key, VALIDOUT_CACHE, VALIDOUT_CACHE_LOCK; verbose)
 end
 
 # --- CGTperm ---
@@ -581,7 +637,8 @@ end
 
 function save_CGTperm_sqlite(::Type{S}, cgtperm; verbose=0) where {S<:NonabelianSymm}
     key = cgtperm_key(S, cgtperm.upsp, cgtperm.dnsp, cgtperm.perm)
-    _cached_save(S, "cgtperm", key, key, cgtperm, CGTPERM_CACHE, CGTPERM_CACHE_LOCK; verbose)
+    cache_key = cgtperm_cache_key(S, cgtperm.upsp, cgtperm.dnsp, cgtperm.perm)
+    _cached_save(S, "cgtperm", key, cache_key, cgtperm, CGTPERM_CACHE, CGTPERM_CACHE_LOCK; verbose)
 end
 
 function load_CGTperm_sqlite(::Type{S},
@@ -589,8 +646,8 @@ function load_CGTperm_sqlite(::Type{S},
     dnsp::NTuple{D, NTuple{NZ, Int}},
     perm::NTuple{N, Int};
     verbose=0) where {S<:NonabelianSymm, U, D, N, NZ}
-    key = cgtperm_key(S, upsp, dnsp, perm)
-    return _cached_load(S, "cgtperm", key, key, CGTPERM_CACHE, CGTPERM_CACHE_LOCK; verbose)
+    cache_key = cgtperm_cache_key(S, upsp, dnsp, perm)
+    return _cached_load(() -> cgtperm_key(S, upsp, dnsp, perm), S, "cgtperm", cache_key, CGTPERM_CACHE, CGTPERM_CACHE_LOCK; verbose)
 end
 
 # --- Conjperm ---
@@ -601,14 +658,15 @@ end
 
 function save_Conjperm_sqlite(::Type{S}, conjperm; verbose=0) where {S<:NonabelianSymm}
     key = conjperm_key(S, conjperm.upsp)
-    _cached_save(S, "conjperm", key, key, conjperm, CONJPERM_CACHE, CONJPERM_CACHE_LOCK; verbose)
+    cache_key = conjperm_cache_key(S, conjperm.upsp)
+    _cached_save(S, "conjperm", key, cache_key, conjperm, CONJPERM_CACHE, CONJPERM_CACHE_LOCK; verbose)
 end
 
 function load_Conjperm_sqlite(::Type{S},
     upsp::NTuple{U, NTuple{NZ, Int}};
     verbose=0) where {S<:NonabelianSymm, U, NZ}
-    key = conjperm_key(S, upsp)
-    return _cached_load(S, "conjperm", key, key, CONJPERM_CACHE, CONJPERM_CACHE_LOCK; verbose)
+    cache_key = conjperm_cache_key(S, upsp)
+    return _cached_load(() -> conjperm_key(S, upsp), S, "conjperm", cache_key, CONJPERM_CACHE, CONJPERM_CACHE_LOCK; verbose)
 end
 
 # --- CGTSVD ---
@@ -619,7 +677,8 @@ end
 
 function save_CGTSVD_sqlite(::Type{S}, cgtsvd; verbose=0) where {S<:NonabelianSymm}
     key = cgtsvd_key(S, cgtsvd.upsp, cgtsvd.dnsp, cgtsvd.leftlegs)
-    _cached_save(S, "cgtsvd", key, key, cgtsvd, CGTSVD_CACHE, CGTSVD_CACHE_LOCK; verbose)
+    cache_key = cgtsvd_cache_key(S, cgtsvd.upsp, cgtsvd.dnsp, cgtsvd.leftlegs)
+    _cached_save(S, "cgtsvd", key, cache_key, cgtsvd, CGTSVD_CACHE, CGTSVD_CACHE_LOCK; verbose)
 end
 
 function load_CGTSVD_sqlite(::Type{S},
@@ -627,8 +686,8 @@ function load_CGTSVD_sqlite(::Type{S},
     dnsp::NTuple{D, NTuple{NZ, Int}},
     leftlegs::NTuple{L, Int};
     verbose=0) where {S<:NonabelianSymm, U, D, L, NZ}
-    key = cgtsvd_key(S, upsp, dnsp, leftlegs)
-    return _cached_load(S, "cgtsvd", key, key, CGTSVD_CACHE, CGTSVD_CACHE_LOCK; verbose)
+    cache_key = cgtsvd_cache_key(S, upsp, dnsp, leftlegs)
+    return _cached_load(() -> cgtsvd_key(S, upsp, dnsp, leftlegs), S, "cgtsvd", cache_key, CGTSVD_CACHE, CGTSVD_CACHE_LOCK; verbose)
 end
 
 # --- CG3flip ---
@@ -637,7 +696,8 @@ function save_cg3flip_sqlite(::Type{S},
     cg3flip::CG3Flip{S, CT, NZ};
     verbose=0) where {S<:NonabelianSymm, CT<:Number, NZ}
     key = cg3flip_key(S, CT, cg3flip.incom_spaces, cg3flip.out_space)
-    _cached_save(S, "cg3flip", key, key, cg3flip, CG3FLIP_CACHE, CG3FLIP_CACHE_LOCK; verbose)
+    cache_key = cg3flip_cache_key(S, CT, cg3flip.incom_spaces, cg3flip.out_space)
+    _cached_save(S, "cg3flip", key, cache_key, cg3flip, CG3FLIP_CACHE, CG3FLIP_CACHE_LOCK; verbose)
 end
 
 function load_cg3flip_sqlite(::Type{S},
@@ -645,8 +705,8 @@ function load_cg3flip_sqlite(::Type{S},
     incom_spaces::NTuple{2, NTuple{NZ, Int}},
     out_space::NTuple{NZ, Int};
     verbose=0) where {S<:NonabelianSymm, CT<:Number, NZ}
-    key = cg3flip_key(S, CT, incom_spaces, out_space)
-    return _cached_load(S, "cg3flip", key, key, CG3FLIP_CACHE, CG3FLIP_CACHE_LOCK; verbose)
+    cache_key = cg3flip_cache_key(S, CT, incom_spaces, out_space)
+    return _cached_load(() -> cg3flip_key(S, CT, incom_spaces, out_space), S, "cg3flip", cache_key, CG3FLIP_CACHE, CG3FLIP_CACHE_LOCK; verbose)
 end
 
 # ============================================================================
@@ -842,6 +902,8 @@ const _ALL_CACHES = (
     (OMLIST_CACHE, OMLIST_CACHE_LOCK),
     (VALIDOUT_CACHE, VALIDOUT_CACHE_LOCK),
     (CGTPERM_CACHE, CGTPERM_CACHE_LOCK),
+    (CONJPERM_CACHE, CONJPERM_CACHE_LOCK),
+    (CGTSVD_CACHE, CGTSVD_CACHE_LOCK),
     (CG3FLIP_CACHE, CG3FLIP_CACHE_LOCK),
 )
 

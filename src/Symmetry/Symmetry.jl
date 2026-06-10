@@ -9,6 +9,14 @@ abstract type Sp{N} <: NonabelianSymm end
 abstract type SO{N} <: NonabelianSymm end
 abstract type G2 <: NonabelianSymm end
 
+# Stable family tags keep symmetry type hashes distinct from Julia's Type hash.
+Base.hash(::Type{Z{N}}, h::UInt) where N = hash((0, N), h)
+Base.hash(::Type{U1}, h::UInt) = hash((1,), h)
+Base.hash(::Type{SU{N}}, h::UInt) where N = hash((2, N), h)
+Base.hash(::Type{Sp{N}}, h::UInt) where N = hash((3, N), h)
+Base.hash(::Type{SO{N}}, h::UInt) where N = hash((4, N), h)
+Base.hash(::Type{G2}, h::UInt) = hash((5,), h)
+
 include("abelian.jl")
 include("SU.jl")
 include("Sp.jl")

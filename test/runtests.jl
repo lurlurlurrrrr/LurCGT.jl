@@ -38,6 +38,31 @@ end
     @test :merge_table_to_global in names(LurCGT)
     @test :sqlite_stats in names(LurCGT)
     @test :delete_closed_local_sqlite_dbs in names(LurCGT)
+    @test hash(Z{3}) == hash((0, 3))
+    @test hash(U1) == hash((1,))
+    @test hash(SU{3}) == hash((2, 3))
+    @test hash(Sp{4}) == hash((3, 4))
+    @test hash(SO{5}) == hash((4, 5))
+    @test hash(G2) == hash((5,))
+    @test LurCGT.irep_cache_key(SU{2}, Int, (1,)) == (SU{2}, Int, (1,))
+    @test LurCGT.cgt_cache_key(SU{2}, Int, ((1,), (1,), (0,))) == (SU{2}, Int, ((1,), (1,), (0,)))
+    @test LurCGT.fsymbol_cache_key(SU{2}, Int, (1,), (1,), (1,), (1,)) == (SU{2}, Int, (1,), (1,), (1,), (1,))
+    @test LurCGT.rsymbol_cache_key(SU{2}, Int, (1,), (1,)) == (SU{2}, Int, (1,), (1,))
+    @test LurCGT.xsymbol_cache_key(SU{2}, ((1,),), ((0,),), ((1,),), ((0,),), (1,), (2,)) == (SU{2}, ((1,),), ((0,),), ((1,),), ((0,),), (1,), (2,))
+    @test LurCGT.omlist_cache_key(SU{2}, ((1,), (0,)), (1,)) == (SU{2}, ((1,), (0,)), (1,))
+    @test LurCGT.validout_cache_key(SU{2}, ((1,), (0,))) == LurCGT.validout_cache_key(SU{2}, ((0,), (1,)))
+    @test LurCGT.cgtperm_cache_key(SU{2}, ((1,),), ((0,),), (1, 2)) == (SU{2}, ((1,),), ((0,),), (1, 2))
+    @test LurCGT.conjperm_cache_key(SU{2}, ((1,),)) == (SU{2}, ((1,),))
+    @test LurCGT.cgtsvd_cache_key(SU{2}, ((1,),), ((0,),), (1,)) == (SU{2}, ((1,),), ((0,),), (1,))
+    @test LurCGT.cg3flip_cache_key(SU{2}, Int, ((1,), (1,)), (0,)) == (SU{2}, Int, ((1,), (1,)), (0,))
+    cache_hit_key = (:cache_hit_no_string_key,)
+    cache_hit_obj = (size_byte=1, value=:hit)
+    lock(LurCGT.IREP_CACHE_LOCK) do
+        LurCGT.IREP_CACHE[cache_hit_key] = cache_hit_obj
+    end
+    @test LurCGT._cached_load(
+        () -> error("SQLite string key should not be generated on cache hit"),
+        SU{2}, "irreps", cache_hit_key, LurCGT.IREP_CACHE, LurCGT.IREP_CACHE_LOCK) === cache_hit_obj
     conjperm = getNsave_Conjperm(SU{2}, ((1,), (1,)))
     @test conjperm isa Conjperm
     @test conjperm === getNsave_Conjperm(SU{2}, ((1,), (1,)))
