@@ -309,6 +309,15 @@ function getNsave_CGTSVD_stan(::Type{S},
     leftlegs_ = normalize_cgtsvd_leftlegs(leftlegs, U + D)
     loaded = load_CGTSVD_sqlite(S, upsp, dnsp, leftlegs_)
     if !isnothing(loaded) return loaded end
+    return computeNsave_CGTSVD_stan(S, upsp, dnsp, leftlegs_; save, verbose)
+end
+
+function computeNsave_CGTSVD_stan(::Type{S},
+    upsp::NTuple{U, NTuple{NZ, Int}},
+    dnsp::NTuple{D, NTuple{NZ, Int}},
+    leftlegs_;
+    save,
+    verbose) where {S<:NonabelianSymm, U, D, NZ}
 
     svd_arr, bond_sps = get_split_basis_matrix(S, upsp, dnsp, leftlegs_; verbose)
     final_perm = get_cgtsvd_final_perm(S, upsp, dnsp, leftlegs_)

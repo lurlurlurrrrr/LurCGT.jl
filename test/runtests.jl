@@ -69,6 +69,21 @@ end
     @test conjperm.perm == get_conj_perm(get_CGTom(SU{2}, ((1,), (1,)), ((1,), (1,))))
 end
 
+@testset "real-valued lowering operators" begin
+    symm = (SU{2},)
+    weights = ([(2,), (0,), (-2,)],)
+    lowering_ops = ([Float64[0 0 0; sqrt(2) 0 0; 0 sqrt(2) 0]],)
+
+    ortho_vecs, space_list = decompose_space(symm, weights, lowering_ops)
+    @test size(ortho_vecs) == (3, 3)
+    @test haskey(space_list, ((2,),))
+
+    mwirop = Float64[0 sqrt(2) 0; 0 0 sqrt(2); 0 0 0]
+    irop, qlabel = get_IROP(symm, weights, lowering_ops, mwirop)
+    @test qlabel == ((2,),)
+    @test size(irop) == (3, 3, 3)
+end
+
 @testset "SQLite environment overrides" begin
     mktempdir() do tmp
         try

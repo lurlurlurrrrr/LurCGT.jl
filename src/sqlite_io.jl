@@ -840,6 +840,21 @@ function merge_all_to_global(::Type{S};
     return (merged=total_merged, skipped=total_skipped)
 end
 
+"""
+    merge_all(S; tables=collect(SQLITE_TABLES), clear_local_after=true, verbose=1)
+
+Merge every selected local SQLite cache table into the global database for
+symmetry `S`.
+
+This is an intuitive alias for `merge_all_to_global` and preserves the same
+keyword arguments, locking behavior, and return value.
+"""
+merge_all(::Type{S};
+          tables=collect(SQLITE_TABLES),
+          clear_local_after::Bool=true,
+          verbose=1) where {S<:NonabelianSymm} =
+    merge_all_to_global(S; tables, clear_local_after, verbose)
+
 # ============================================================================
 # Utility Functions
 # ============================================================================

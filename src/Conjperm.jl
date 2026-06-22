@@ -34,6 +34,12 @@ function getNsave_Conjperm_std(::Type{S},
 
     loaded = load_Conjperm_sqlite(S, upsp)
     !isnothing(loaded) && return loaded
+    return computeNsave_Conjperm_std(S, upsp; save)
+end
+
+function computeNsave_Conjperm_std(::Type{S},
+    upsp::NTuple{U, NTuple{NZ, Int}};
+    save=true) where {S<:NonabelianSymm, U, NZ}
 
     cgt_oms = get_CGTom(S, upsp, upsp)
     obj = Conjperm{S, U, NZ}(get_conj_perm(cgt_oms), upsp)

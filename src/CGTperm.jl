@@ -104,7 +104,16 @@ function getNsave_CGTperm_std(::Type{S},
     # Try to load from HDF5, use it if exists
     loaded = load_CGTperm_sqlite(S, upsp, dnsp, perm)
     if !isnothing(loaded) return loaded end
+    return computeNsave_CGTperm_std(S, upsp, dnsp, perm; save)
+end
 
+function computeNsave_CGTperm_std(::Type{S},
+    upsp::NTuple{U, NTuple{NZ, Int}},
+    dnsp::NTuple{D, NTuple{NZ, Int}},
+    perm::NTuple{N, Int};
+    save=true) where {S<:NonabelianSymm, U, D, NZ, N}
+
+    perm_up = perm[1:U]; perm_dn = Tuple(i-U for i in perm[U+1:end])
     CGT_oms = get_CGTom(S, upsp, dnsp)
     CGTperm_arr = zeros(Float64, CGT_oms.totalOM, CGT_oms.totalOM)
 

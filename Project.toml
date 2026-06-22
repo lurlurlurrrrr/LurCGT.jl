@@ -1,6 +1,6 @@
 name = "LurCGT"
 uuid = "4f3ab192-95b7-495a-a0ca-04b4b33dd828"
-version = "0.2.0"
+version = "1.0.0"
 authors = ["Kiyeon Kim <lurlur2000@snu.ac.kr>"]
 
 [deps]

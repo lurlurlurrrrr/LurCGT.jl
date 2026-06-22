@@ -205,9 +205,23 @@ function getNsave_Xsymbol_zeroadded(::Type{S},
     save) where {S<:NonabelianSymm, U1, D1, U2, D2, NZ, M}
 
     @assert NZ == nzops(S)
-    # Try to load from HDF5, use it if exists
+    # Try to load from database, use it if exists
     loaded = load_Xsymbol_sqlite(S, up1sp, dn1sp, up2sp, dn2sp, ctlegs1, ctlegs2)
     if !isnothing(loaded) return loaded end
+    return computeNsave_Xsymbol_zeroadded(S, up1sp, dn1sp, up2sp, dn2sp,
+        ctlegs1, ctlegs2; verbose, use1j, save)
+end
+
+function computeNsave_Xsymbol_zeroadded(::Type{S},
+    up1sp::NTuple{U1, NTuple{NZ, Int}},
+    dn1sp::NTuple{D1, NTuple{NZ, Int}},
+    up2sp::NTuple{U2, NTuple{NZ, Int}},
+    dn2sp::NTuple{D2, NTuple{NZ, Int}},
+    ctlegs1::NTuple{M, Int},
+    ctlegs2::NTuple{M, Int};
+    verbose,
+    use1j,
+    save) where {S<:NonabelianSymm, U1, D1, U2, D2, NZ, M}
 
     # Upper / lower spaces for the resulting CGT
     up3sp, dn3sp = get_resulting_spaces(

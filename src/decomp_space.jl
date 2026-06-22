@@ -2,13 +2,13 @@ comm(A, B) = A * B - B * A
 
 # i, j: To assert that weights are valid
 function toblk(symm::NTuple{N, Any},
-    mat::SparseArray{Int, 2},
+    mat::SparseArray{Float64, 2},
     weight_zips::Vector{NTuple{N, Tuple{Vararg{Int}}}},
     omvec::Dict{NTuple{N, Tuple{Vararg{Int}}}, Vector{Int}},
     nthweight::Vector{Int},
     i::Int,
     j::Int) where N
-    blks = Dict{NTuple{N, Tuple{Vararg{Int}}}, SparseMatrixCSC{Int}}()
+    blks = Dict{NTuple{N, Tuple{Vararg{Int}}}, SparseMatrixCSC{Float64}}()
     S = symm[i]
     for (k, v) in mat.data
         a, b = k.I
@@ -19,7 +19,7 @@ function toblk(symm::NTuple{N, Any},
 
         ma, mb = omvec[wa], omvec[wb]
         ima, imb = length(ma), length(mb)
-        if !haskey(blks, wb) blks[wb] = spzeros(Int, ima, imb) end
+        if !haskey(blks, wb) blks[wb] = spzeros(Float64, ima, imb) end
 
         blks[wb][na, nb] = v
     end
@@ -78,10 +78,10 @@ end
 # symm: tuple of symmetries 
 function decompose_space(symm::NTuple{N, Any},
     weights::NTuple{N, Vector{<:Tuple{Vararg{Int}}}},
-    lops::NTuple{N, Vector{<:AbstractMatrix{Int}}}) where N
+    lops::NTuple{N, Vector{<:AbstractMatrix{<:Real}}}) where N
 
     # Convert all lowering operators to sparse matrices
-    lops_sparse = ntuple(i->SparseArray.(lops[i]), N)
+    lops_sparse = ntuple(i -> SparseArray.(Float64.(lop) for lop in lops[i]), N)
     weights_zip = Vector{NTuple{N, Tuple{Vararg{Int}}}}()
     spdim = length(weights[1])
     for i in 1:spdim
@@ -224,7 +224,7 @@ end
 
 # There is a similar version of this function when getting IROP
 function get_vectors_sector(ireps::NTuple{N, Irep},
-    lops_blk::NTuple{N, Vector{Dict{NTuple{N, Tuple{Vararg{Int}}}, SparseMatrixCSC{Int}}}},
+    lops_blk::NTuple{N, Vector{Dict{NTuple{N, Tuple{Vararg{Int}}}, SparseMatrixCSC{Float64}}}},
     mwstates::Matrix{Float64},
     mw::NTuple{N, Tuple{Vararg{Int}}}) where N
 
@@ -239,7 +239,7 @@ end
 # I: start from 1, increased by 1 for every recursion step.
 function get_vectors_sector_!(::Val{I},
     vecs_sector::Dict{NTuple{N, Tuple{Vararg{Int}}}, Array{Float64, M}},
-    lops_blk::NTuple{N, Vector{Dict{NTuple{N, Tuple{Vararg{Int}}}, SparseMatrixCSC{Int}}}},
+    lops_blk::NTuple{N, Vector{Dict{NTuple{N, Tuple{Vararg{Int}}}, SparseMatrixCSC{Float64}}}},
     ireps::NTuple{N, Irep},
     mw::NTuple{N, Tuple{Vararg{Int}}}) where {I, N, M}
 
@@ -602,7 +602,7 @@ end
 
 function getweight_irop(::Type{S},
     z_ops::Vector{<:Tuple{Vararg{Int}}},
-    lowering_ops::Vector{<:AbstractMatrix{Int}},
+    lowering_ops::Vector{<:AbstractMatrix{<:Real}},
     mwirop::AbstractMatrix{<:Real}) where S<:Symmetry
 
     # Get the qlabel of the maximal weight operator in the multiplet that mwirop belongs to
@@ -617,7 +617,7 @@ function getweight_irop(::Type{S},
 end
 
 function get_irops_sector(ireps::NTuple{N, Irep},
-    lowering_ops::NTuple{N, Vector{<:AbstractMatrix{Int}}},
+    lowering_ops::NTuple{N, Vector{<:AbstractMatrix{<:Real}}},
     mwirop::AbstractMatrix{<:Real},
     mw::NTuple{N, Tuple{Vararg{Int}}}) where N
 
@@ -630,7 +630,7 @@ end
 
 function get_irops_sector_!(::Val{I},
     irops_sector::Dict{NTuple{N, Tuple{Vararg{Int}}}, Array{SparseMatrixCSC{Float64}, N}},
-    lowering_ops::NTuple{N, Vector{<:AbstractMatrix{Int}}},
+    lowering_ops::NTuple{N, Vector{<:AbstractMatrix{<:Real}}},
     ireps::NTuple{N, Irep},
     mw::NTuple{N, Tuple{Vararg{Int}}}) where {I, N}
 
@@ -698,7 +698,7 @@ end
 
 function get_IROP(symm::NTuple{N, Any},
     z_ops::NTuple{N, Vector{<:Tuple{Vararg{Int}}}},
-    lowering_ops::NTuple{N, Vector{<:AbstractMatrix{Int}}},
+    lowering_ops::NTuple{N, Vector{<:AbstractMatrix{<:Real}}},
     mwirop::AbstractMatrix{<:Real}) where N
 
     #println(symm)
