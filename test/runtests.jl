@@ -202,6 +202,7 @@ end
                     @test result.merged == 1
                     @test isfile(source_global_path)
                     @test !isfile(node_global_path)
+                    LurCGT.close_all_sqlite_dbs()
                     source_db = SQLite.DB(source_global_path)
                     try
                         @test first(DBInterface.execute(source_db,
