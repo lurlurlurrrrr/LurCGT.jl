@@ -7,6 +7,7 @@ using Random
 using StatsBase
 using Test
 using TOML
+using SQLite
 using DBInterface
 
 include("test_utils.jl")
@@ -38,6 +39,8 @@ end
     @test :merge_table_to_global in names(LurCGT)
     @test :sqlite_stats in names(LurCGT)
     @test :delete_closed_local_sqlite_dbs in names(LurCGT)
+    @test :finalize_sqlite! in names(LurCGT)
+    @test :finalize_all_sqlite! in names(LurCGT)
     @test hash(Z{3}) == hash((0, 3))
     @test hash(U1) == hash((1,))
     @test hash(SU{3}) == hash((2, 3))
@@ -138,7 +141,7 @@ end
                     @test LurCGT.sqlite_lock_dir() == joinpath(normpath(abspath(node_global_dir)), "locks")
                     @test first(DBInterface.execute(local_db,
                         "SELECT COUNT(*) AS n FROM irreps WHERE key = ?",
-                        [local_copy_key])).n == 1
+                        [local_copy_key])).n == 0
                     @test first(DBInterface.execute(global_db,
                         "SELECT COUNT(*) AS n FROM irreps WHERE key = ?",
                         [global_copy_key])).n == 1
@@ -175,6 +178,124 @@ end
 
             withenv("LURCGT_RUN_MODE" => "invalid") do
                 @test_throws ArgumentError LurCGT.sqlite_run_mode()
+            end
+
+            withenv("LURCGT_RUN_MODE" => "server",
+                    "LURCGT_LOCALDB_DIR" => joinpath(tmp, "unused-source-local"),
+                    "LURCGT_GLOBALDB_DIR" => joinpath(tmp, "merge-source-global"),
+                    "LURCGT_LOCALDB_DIR_NODE" => joinpath(tmp, "merge-node-local"),
+                    "LURCGT_GLOBALDB_DIR_NODE" => joinpath(tmp, "merge-node-global")) do
+                try
+                    LurCGT.close_all_sqlite_dbs()
+                    local_db = LurCGT.get_sqlite_db(SU{2}, :local)
+                    source_global_path = LurCGT.sqlite_db_source_path(SU{2}, :global)
+                    node_global_path = LurCGT.sqlite_db_path(SU{2}, :global)
+                    merge_key = "sqlite_server_source_merge"
+                    @test !isfile(source_global_path)
+                    @test !isfile(node_global_path)
+
+                    DBInterface.execute(local_db,
+                        "INSERT OR REPLACE INTO irreps (key, data) VALUES (?, ?)",
+                        [merge_key, payload])
+                    result = LurCGT.merge_all_to_global(SU{2}; tables=("irreps",), verbose=0)
+
+                    @test result.merged == 1
+                    @test isfile(source_global_path)
+                    @test !isfile(node_global_path)
+                    source_db = SQLite.DB(source_global_path)
+                    try
+                        @test first(DBInterface.execute(source_db,
+                            "SELECT COUNT(*) AS n FROM irreps WHERE key = ?",
+                            [merge_key])).n == 1
+                    finally
+                        SQLite.close(source_db)
+                    end
+                finally
+                    LurCGT.close_all_sqlite_dbs()
+                end
+            end
+
+            withenv("LURCGT_LOCALDB_DIR" => joinpath(tmp, "finalize-local"),
+                    "LURCGT_GLOBALDB_DIR" => joinpath(tmp, "finalize-global")) do
+                try
+                    LurCGT.close_all_sqlite_dbs()
+                    local_db = LurCGT.get_sqlite_db(SU{2}, :local)
+                    local_path = LurCGT.sqlite_db_path(SU{2}, :local)
+                    global_path = LurCGT.sqlite_db_path(SU{2}, :global)
+                    finalize_key = "sqlite_local_finalize"
+                    @test isfile(local_path)
+                    @test !isfile(global_path)
+
+                    DBInterface.execute(local_db,
+                        "INSERT OR REPLACE INTO irreps (key, data) VALUES (?, ?)",
+                        [finalize_key, payload])
+                    result = LurCGT.finalize_sqlite!(SU{2}; tables=("irreps",), cleanup=true, verbose=0)
+
+                    @test result.merged == 1
+                    @test isfile(global_path)
+                    @test !isfile(local_path)
+                    global_db = SQLite.DB(global_path)
+                    try
+                        @test first(DBInterface.execute(global_db,
+                            "SELECT COUNT(*) AS n FROM irreps WHERE key = ?",
+                            [finalize_key])).n == 1
+                    finally
+                        SQLite.close(global_db)
+                    end
+                finally
+                    LurCGT.close_all_sqlite_dbs()
+                end
+            end
+
+            withenv("LURCGT_RUN_MODE" => "server",
+                    "LURCGT_GLOBALDB_DIR" => joinpath(tmp, "finalize-source-global"),
+                    "LURCGT_LOCALDB_DIR_NODE" => joinpath(tmp, "finalize-node-local"),
+                    "LURCGT_GLOBALDB_DIR_NODE" => joinpath(tmp, "finalize-node-global")) do
+                try
+                    LurCGT.close_all_sqlite_dbs()
+                    source_global_path = LurCGT.sqlite_db_source_path(SU{2}, :global)
+                    node_global_path = LurCGT.sqlite_db_path(SU{2}, :global)
+                    local_path = LurCGT.sqlite_db_path(SU{2}, :local)
+                    finalize_key = "sqlite_server_finalize"
+
+                    mkpath(dirname(source_global_path))
+                    source_db = SQLite.DB(source_global_path)
+                    try
+                        LurCGT._init_sqlite_db(source_db)
+                        DBInterface.execute(source_db,
+                            "INSERT OR REPLACE INTO irreps (key, data) VALUES (?, ?)",
+                            [global_copy_key, payload])
+                    finally
+                        SQLite.close(source_db)
+                    end
+
+                    global_db = LurCGT.get_sqlite_db(SU{2}, :global)
+                    @test isfile(node_global_path)
+                    @test first(DBInterface.execute(global_db,
+                        "SELECT COUNT(*) AS n FROM irreps WHERE key = ?",
+                        [global_copy_key])).n == 1
+
+                    local_db = LurCGT.get_sqlite_db(SU{2}, :local)
+                    DBInterface.execute(local_db,
+                        "INSERT OR REPLACE INTO irreps (key, data) VALUES (?, ?)",
+                        [finalize_key, payload])
+                    result = LurCGT.finalize_sqlite!(SU{2}; tables=("irreps",), cleanup=true, verbose=0)
+
+                    @test result.merged == 1
+                    @test isfile(source_global_path)
+                    @test !isfile(local_path)
+                    @test !isfile(node_global_path)
+                    source_db_check = SQLite.DB(source_global_path)
+                    try
+                        @test first(DBInterface.execute(source_db_check,
+                            "SELECT COUNT(*) AS n FROM irreps WHERE key = ?",
+                            [finalize_key])).n == 1
+                    finally
+                        SQLite.close(source_db_check)
+                    end
+                finally
+                    LurCGT.close_all_sqlite_dbs()
+                end
             end
         finally
             LurCGT.close_all_sqlite_dbs()

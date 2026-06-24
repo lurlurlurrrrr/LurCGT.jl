@@ -31,8 +31,9 @@ export fixedint_canonical_pairs, run_fixedint_cgt_chunk
 export fixedint_catalog_path, fixedint_chunk_result_path
 export collect_fixedint_plot_cells, merge_fixedint_ireps_to_global
 export merge_table_to_global, merge_all_to_global, merge_all
+export finalize_sqlite!, finalize_all_sqlite!
 export sqlite_run_mode, sqlite_local_dir, sqlite_global_dir, sqlite_lock_dir
 export sqlite_stats, clear_sqlite_cache!, close_all_sqlite_dbs
-export delete_closed_local_sqlite_dbs
+export delete_closed_local_sqlite_dbs, delete_current_local_sqlite_db, delete_active_global_sqlite_copy
 
 end

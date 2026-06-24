@@ -19,6 +19,8 @@ using FileWatching: mkpidlock
 
 const SQLITE_DBS = Dict{String, SQLite.DB}()
 const SQLITE_DB_LOCK = ReentrantLock()
+const SQLITE_TOUCHED_SYMM = Set{DataType}()
+const SQLITE_TOUCHED_SYMM_LOCK = ReentrantLock()
 
 # Per-type LRU caches (sized to match typical object sizes)
 const IREP_CACHE = LRU{Tuple, Any}(maxsize=100*1024*1024, by=x -> x.size_byte)
@@ -135,6 +137,11 @@ Merge operations create lock files here so concurrent jobs can safely call
 """
 sqlite_lock_dir(env::AbstractDict=ENV) = joinpath(sqlite_global_dir(env), "locks")
 
+sqlite_merge_global_dir(env::AbstractDict=ENV) =
+    sqlite_run_mode(env) == "server" ? sqlite_global_source_dir(env) : sqlite_global_dir(env)
+
+sqlite_merge_lock_dir(env::AbstractDict=ENV) = joinpath(sqlite_merge_global_dir(env), "locks")
+
 function sqlite_db_source_path(::Type{S}, location::Symbol=:local;
                                env::AbstractDict=ENV,
                                process_id::AbstractString=process_local_id()) where {S<:NonabelianSymm}
@@ -157,6 +164,10 @@ function sqlite_db_path(::Type{S}, location::Symbol=:local;
     return joinpath(sqlite_local_dir(env), symm_name, "$(process_id).db")
 end
 
+function sqlite_merge_global_db_path(::Type{S}; env::AbstractDict=ENV) where {S<:NonabelianSymm}
+    return joinpath(sqlite_merge_global_dir(env), "$(totxt(S)).db")
+end
+
 function _copy_sqlite_file_set(source_path::AbstractString, target_path::AbstractString)
     mkpath(dirname(target_path))
     for suffix in ("", "-wal", "-shm")
@@ -172,6 +183,7 @@ function _prepare_server_sqlite_db(::Type{S}, location::Symbol, path::AbstractSt
                                    env::AbstractDict=ENV,
                                    process_id::AbstractString=process_local_id()) where {S<:NonabelianSymm}
     sqlite_run_mode(env) == "server" || return nothing
+    location == :local && return nothing
     isfile(path) && return nothing
 
     source_path = sqlite_db_source_path(S, location; env, process_id)
@@ -209,6 +221,19 @@ process_local_id() = PROCESS_LOCAL_ID[]
 process_local_id(env::AbstractDict; hostname::AbstractString=gethostname(), pid::Integer=getpid()) =
     build_process_local_id(env; hostname, pid)
 
+function _mark_sqlite_symmetry_used(::Type{S}) where {S<:NonabelianSymm}
+    Base.lock(SQLITE_TOUCHED_SYMM_LOCK) do
+        push!(SQLITE_TOUCHED_SYMM, S)
+    end
+    return nothing
+end
+
+function _touched_sqlite_symmetries()
+    return Base.lock(SQLITE_TOUCHED_SYMM_LOCK) do
+        collect(SQLITE_TOUCHED_SYMM)
+    end
+end
+
 # All table names (created at DB init)
 const SQLITE_TABLES = ("irreps", "cgt", "fsymbol", "rsymbol", "xsymbol",
                         "omlist", "validout", "cgtperm", "conjperm", "cgtsvd", "cg3flip")
@@ -238,6 +263,7 @@ Locations:
 """
 function get_sqlite_db(::Type{S}, location::Symbol=:local) where {S<:NonabelianSymm}
     @assert location in (:local, :global)
+    _mark_sqlite_symmetry_used(S)
     path = sqlite_db_path(S, location)
 
     Base.lock(SQLITE_DB_LOCK) do
@@ -250,6 +276,29 @@ function get_sqlite_db(::Type{S}, location::Symbol=:local) where {S<:NonabelianS
             db
         end
     end
+end
+
+function get_sqlite_merge_global_db(::Type{S}) where {S<:NonabelianSymm}
+    _mark_sqlite_symmetry_used(S)
+    path = sqlite_merge_global_db_path(S)
+
+    Base.lock(SQLITE_DB_LOCK) do
+        db_key = "merge_global:$(path)"
+        get!(SQLITE_DBS, db_key) do
+            mkpath(dirname(path))
+            db = SQLite.DB(path)
+            _init_sqlite_db(db)
+            db
+        end
+    end
+end
+
+function _sqlite_count_rows(db::SQLite.DB, table_name::String)
+    count = 0
+    for row in DBInterface.execute(db, "SELECT COUNT(*) AS n FROM $(table_name)")
+        count = row.n
+    end
+    return count
 end
 
 # ============================================================================
@@ -723,7 +772,7 @@ the shared global database for symmetry `S`.
 `"cgt"`, `"xsymbol"`, `"cgtperm"`, or `"cgtsvd"`.  If `filter_prefix` is
 provided, only rows whose key starts with that prefix are merged.
 
-The merge is protected by a file lock under `sqlite_lock_dir()` so multiple
+The merge is protected by a file lock under `sqlite_merge_lock_dir()` so multiple
 processes can merge safely.  Rows are inserted with `INSERT OR IGNORE`; existing
 global rows are counted as skipped.  When `clear_local_after=true`, successfully
 merged rows are removed from the local table.
@@ -734,9 +783,9 @@ function merge_table_to_global(::Type{S}, table_name::String, filter_prefix::Str
                                clear_local_after::Bool=true,
                                verbose=1) where {S<:NonabelianSymm}
     local_db = get_sqlite_db(S, :local)
-    global_db = get_sqlite_db(S, :global)
+    global_db = get_sqlite_merge_global_db(S)
 
-    lockdir = sqlite_lock_dir()
+    lockdir = sqlite_merge_lock_dir()
     mkpath(lockdir)
     lockpath = joinpath(lockdir, "$(totxt(S))_merge.lock")
 
@@ -767,24 +816,16 @@ function merge_table_to_global(::Type{S}, table_name::String, filter_prefix::Str
             return (merged=0, skipped=0)
         end
 
-        # Bulk insert with INSERT OR IGNORE in a transaction
-        # Count rows before/after to determine how many were actually inserted
-        count_before = first(DBInterface.execute(global_db,
-            "SELECT COUNT(*) AS n FROM $(table_name)")).n
-        DBInterface.execute(global_db, "BEGIN TRANSACTION")
-        try
-            for (key, data) in rows
-                DBInterface.execute(global_db,
-                    "INSERT OR IGNORE INTO $(table_name) (key, data) VALUES (?, ?)",
-                    [key, data])
-            end
-            DBInterface.execute(global_db, "COMMIT")
-        catch e
-            DBInterface.execute(global_db, "ROLLBACK")
-            rethrow(e)
+        # Count rows before/after to determine how many were actually inserted.
+        # SQLite.jl can keep write statements active until fully finalized, so
+        # avoid an explicit COMMIT boundary around this loop.
+        count_before = _sqlite_count_rows(global_db, table_name)
+        for (key, data) in rows
+            collect(DBInterface.execute(global_db,
+                "INSERT OR IGNORE INTO $(table_name) (key, data) VALUES (?, ?)",
+                [key, data]))
         end
-        count_after = first(DBInterface.execute(global_db,
-            "SELECT COUNT(*) AS n FROM $(table_name)")).n
+        count_after = _sqlite_count_rows(global_db, table_name)
         merged_count = count_after - count_before
 
         skipped_count = length(rows) - merged_count
@@ -977,6 +1018,32 @@ function _local_sqlite_db_paths(root::AbstractString)
     return sort!(collect(paths))
 end
 
+function _delete_sqlite_file_set(path::AbstractString; verbose=0)
+    deleted_any = false
+    for file in _sqlite_file_set(path)
+        isfile(file) || continue
+        rm(file; force=true)
+        deleted_any = true
+    end
+    verbose > 0 && deleted_any && println("Deleted SQLite DB: $(path)")
+    return deleted_any
+end
+
+function delete_current_local_sqlite_db(::Type{S}; env::AbstractDict=ENV,
+                                        process_id::AbstractString=process_local_id(),
+                                        verbose=0) where {S<:NonabelianSymm}
+    path = sqlite_db_path(S, :local; env, process_id)
+    return _delete_sqlite_file_set(path; verbose) ? String[path] : String[]
+end
+
+function delete_active_global_sqlite_copy(::Type{S}; env::AbstractDict=ENV,
+                                          verbose=0) where {S<:NonabelianSymm}
+    sqlite_run_mode(env) == "server" || return String[]
+    path = sqlite_db_path(S, :global; env)
+    path == sqlite_db_source_path(S, :global; env) && return String[]
+    return _delete_sqlite_file_set(path; verbose) ? String[path] : String[]
+end
+
 """
     delete_closed_local_sqlite_dbs(; env=ENV, verbose=0)
 
@@ -999,12 +1066,7 @@ function delete_closed_local_sqlite_dbs(; env::AbstractDict=ENV, verbose=0)
     for path in _local_sqlite_db_paths(root)
         path in opened_paths && continue
 
-        deleted_any = false
-        for file in _sqlite_file_set(path)
-            isfile(file) || continue
-            rm(file; force=true)
-            deleted_any = true
-        end
+        deleted_any = _delete_sqlite_file_set(path; verbose=0)
 
         if deleted_any
             push!(deleted_paths, path)
@@ -1013,6 +1075,70 @@ function delete_closed_local_sqlite_dbs(; env::AbstractDict=ENV, verbose=0)
     end
 
     return deleted_paths
+end
+
+"""
+    finalize_sqlite!(S; tables=collect(SQLITE_TABLES), cleanup=true, verbose=1)
+
+Merge the current process-local SQLite cache for symmetry `S` into the merge
+target global database, close SQLite connections, and optionally delete
+temporary runtime DB files.
+
+In local mode, the merge target is `sqlite_global_dir()`, and cleanup deletes
+only the current process-local DB for `S`.  In server mode, the merge target is
+`sqlite_global_source_dir()`, and cleanup deletes the current process-local
+node DB plus the node-local global copy for `S`.  Cleanup happens only after a
+successful merge.
+"""
+function finalize_sqlite!(::Type{S};
+                          tables=collect(SQLITE_TABLES),
+                          cleanup::Bool=true,
+                          verbose=1) where {S<:NonabelianSymm}
+    result = merge_all_to_global(S; tables, clear_local_after=true, verbose)
+
+    if cleanup
+        close_all_sqlite_dbs()
+        delete_current_local_sqlite_db(S; verbose)
+        delete_active_global_sqlite_copy(S; verbose)
+    end
+
+    return result
+end
+
+"""
+    finalize_all_sqlite!(; cleanup=true, verbose=1, throw_errors=true, only_existing_local=true)
+
+Finalize every non-Abelian symmetry whose SQLite store was touched in this
+Julia process.
+"""
+function finalize_all_sqlite!(; cleanup::Bool=true,
+                              verbose=1,
+                              throw_errors::Bool=true,
+                              only_existing_local::Bool=true)
+    total_merged = 0
+    total_skipped = 0
+    errors = Any[]
+
+    for S in _touched_sqlite_symmetries()
+        if only_existing_local && !isfile(sqlite_db_path(S, :local))
+            continue
+        end
+
+        try
+            result = finalize_sqlite!(S; cleanup, verbose)
+            total_merged += result.merged
+            total_skipped += result.skipped
+        catch e
+            push!(errors, (symmetry=S, error=e))
+            if throw_errors
+                rethrow(e)
+            elseif verbose > 0
+                println("SQLite finalization failed for $(totxt(S)): $(e)")
+            end
+        end
+    end
+
+    return (merged=total_merged, skipped=total_skipped, errors=errors)
 end
 
 """
@@ -1037,4 +1163,8 @@ end
 
 function __init__()
     PROCESS_LOCAL_ID[] = build_process_local_id()
+    atexit() do
+        finalize_all_sqlite!(; cleanup=true, verbose=0,
+                             throw_errors=false, only_existing_local=true)
+    end
 end
