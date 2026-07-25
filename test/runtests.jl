@@ -314,6 +314,10 @@ end
     test_CGTSVD_unitary_randinput(SU{3}, 20000, 3, 10; verbose=0)
 end
 
+@testset "CGTQR tests" begin
+    test_CGTQR_unitary_examples(SU{2}; verbose=0)
+end
+
 
 @testset "declared deps cover imports" begin
     project = TOML.parsefile(joinpath(dirname(@__DIR__), "Project.toml"))
