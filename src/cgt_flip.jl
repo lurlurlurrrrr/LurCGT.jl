@@ -1,6 +1,17 @@
 # Contraction of CG3 and 1j-symbol
 
 # Always the second incoming space of original CG3 is contracted to 1j-symbol
+"""
+Basis transform obtained by contracting one CG3 leg with a 1j tensor.
+
+# Fields
+
+- `incom_spaces`: two original CG3 incoming q-labels.
+- `out_space`: original CG3 output q-label.
+- `flip_mat`: dense map between original and flipped outer-multiplicity bases.
+- `nfactor`: exact normalization factors for the map.
+- `size_byte`: cached memory footprint for LRU eviction.
+"""
 struct CG3Flip{S<:NonabelianSymm, CT, NZ}
     # Incoming spaces of original CG3
     incom_spaces::NTuple{2, NTuple{NZ, Int}} 
@@ -25,6 +36,20 @@ struct CG3Flip{S<:NonabelianSymm, CT, NZ}
     end
 end
 
+"""
+    getNsave_cg3flip(::Type{S}, ::Type{RT}, ::Type{CT}, incom_spaces, out_space; verbose=0) -> CG3Flip
+
+Load or compute the basis transform obtained by flipping one CG3 leg through a
+1j tensor.
+
+`S` selects the symmetry, `RT` is the exact irrep/1j coefficient type, and `CT`
+is the stored CGT scalar type. `incom_spaces == (in1, in2)` are the original
+CG3 input qlabels and `out_space` is the original output qlabel. On a cache
+miss, the method loads the original CG3, loads and metric-conjugates the 1j
+block for `in2`, loads the target CG3 `(out_space, dual(in2)) -> in1`,
+contracts maximal-weight blocks, stores original and new normalization factors,
+saves the transform, and returns it.
+"""
 # Obtain the CG3Flip object by contracting CG3 with 1j-symbol
 function getNsave_cg3flip(::Type{S},
     ::Type{RT},
@@ -61,6 +86,15 @@ function getNsave_cg3flip(::Type{S},
     return cg3flip_struct
 end
 
+"""
+    cg3flip_rightnormalized(cg3flip::CG3Flip) -> (Matrix{BigInt}, Integer)
+
+Convert a CG3 flip transform to an integer right-normalized matrix.
+
+`cg3flip.flip_mat` is multiplied by `Diagonal(cg3flip.new_nfactor)`. The least
+common multiple of denominators is returned as `nfac`, and the matrix is scaled
+to integer entries for exact recoupling routines.
+"""
 function cg3flip_rightnormalized(cg3flip::CG3Flip{S, CT, NZ}) where {S<:NonabelianSymm, CT<:Number, NZ}
     @assert nzops(S) == NZ
     mat_rational = cg3flip.flip_mat * Diagonal(cg3flip.new_nfactor)
@@ -68,6 +102,15 @@ function cg3flip_rightnormalized(cg3flip::CG3Flip{S, CT, NZ}) where {S<:Nonabeli
     return Matrix{BigInt}(mat_rational * nfac), nfac
 end
 
+"""
+    contract_blks(::Type{S}, oblk, blk1j, nblk, om; verbose=0)
+
+Contract original CG3, 1j, and flipped CG3 maximal-weight blocks.
+
+`oblk` is the original CG3 block dictionary, `blk1j` is the conjugated 1j block,
+`nblk` is the new CG3 block dictionary, and `om` is the shared outer
+multiplicity. The result is the dense `om x om` flip matrix.
+"""
 function contract_blks(::Type{S},
     oblk::Dict{NTuple{2, NTuple{NZ, Int}}, Array{CT, 3}},
     blk1j::Dict{NTuple{2, NTuple{NZ, Int}}, Array{CT}},
@@ -88,6 +131,15 @@ function contract_blks(::Type{S},
     return flip_arr
 end
 
+"""
+    conjugate_1j!(::Type{S}, blk, fac, in1, in2)
+
+Apply product inner-product metrics to a 1j block dictionary in place.
+
+`blk[(z1, z2)]` is contracted on both input axes with the inner-product matrices
+of irreps `in1` and `in2`. `fac` must contain the single 1j normalization
+factor; it is checked for consistency but not modified.
+"""
 function conjugate_1j!(::Type{S},
     blk::Dict{NTuple{2, NTuple{NZ, Int}}, Array{CT}},
     fac::Vector{Rational{CT}},

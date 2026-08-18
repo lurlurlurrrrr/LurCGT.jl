@@ -43,9 +43,13 @@ onemore_fundamental_irep(::Type{S}, n::Int) where S<:NonabelianSymm = false
 onemore_fundamental_irep(::Type{SO{N}}, n::Int) where N = 
 (N % 2 == 0 && n == div(N, 2))
 
-# qlabels_in = (q1, q2), qlabels_out = [q3, q4, ...]
-# Then, generate CG3s (q1⊗q2->q3), (q1⊗q2->q4), ...
-# They are returned as a Dict{qlabel, CG3}
+"""
+    generate_every_CGT(S, RT, CT, qlabels_in, qlabels_out; save=true)
+
+Internal CGT-generation boundary.  Construct the CG3 tensors coupling the two
+sorted input q-labels to each requested output (or all valid outputs), and
+optionally save the generated objects to SQLite.
+"""
 function generate_every_CGT(::Type{S}, ::Type{RT}, ::Type{CT}, 
     qlabels_in::NTuple{2, NTuple{NZ, Int}},
     qlabels_out::Union{Vector{NTuple{NZ, Int}}, Nothing};
@@ -215,6 +219,18 @@ function generate_every_CGT(::Type{S}, ::Type{RT}, ::Type{CT},
 end
 
 
+"""
+    omlookup(::Type{S}, ::Type{RT}, q1, q2; verbose=0)
+
+Compute and cache outer multiplicities for the tensor product `q1 x q2`.
+
+`S` is the non-Abelian symmetry and `RT` is the exact/integer coefficient type
+used to load irreps. `q1` and `q2` are input qlabels and must satisfy
+`q1 <= q2`, matching the canonical CG3 input ordering. The method counts weight
+multiplicities in the product representation, repeatedly subtracts complete
+output irreps from the highest remaining weights, then saves both `OMList`
+entries and the `ValidOuts` record for this pair.
+"""
 # Overall structure is similar to generate_every_CGT function
 function omlookup(::Type{S}, ::Type{RT},
     q1::NTuple{NZ, Int},
@@ -262,11 +278,30 @@ function omlookup(::Type{S}, ::Type{RT},
     save_omlist_cg3(S, q1, q2, om_list)
 end
 
+"""
+    to_txt(qlabel) -> String
+    qlabels_to_txt(qlabels) -> String
+
+Format qlabels as compact cache/database key fragments.
+
+`to_txt` joins one qlabel tuple with spaces. `qlabels_to_txt` formats a tuple
+of qlabels and joins the entries with commas.
+"""
 to_txt(qlabel::NTuple{NZ, Int}) where NZ = join(qlabel, " ")
 
 qlabels_to_txt(qlabels::NTuple{N, NTuple{NZ, Int}}) where {N, NZ} = 
 join([to_txt(q) for q in qlabels], ",")
 
+"""
+    save_omlist_cg3(::Type{S}, q1, q2, om_list)
+
+Build and save outer-multiplicity cache records for a CG3 fusion.
+
+`S` selects the symmetry, `q1` and `q2` are the canonical ordered input qlabels,
+and `om_list[outspace]` is the outer multiplicity of each output qlabel. The
+function saves one `OMList` per output and one `ValidOuts` object for the input
+pair.
+"""
 function save_omlist_cg3(::Type{S},
         q1::NTuple{NZ, Int},
         q2::NTuple{NZ, Int},
@@ -284,6 +319,15 @@ function save_omlist_cg3(::Type{S},
     save_validout_sqlite(S, vo_obj)
 end
 
+"""
+    create_omlist_cg3(::Type{S}, q1, q2, outspace, cg3_OM) -> OMList
+
+Create the `OMList` object for one three-leg CGT fusion channel.
+
+`q1` and `q2` are input qlabels, `outspace` is the output qlabel, and `cg3_OM`
+is the outer multiplicity for that output. Three-leg CGTs have no intermediate
+spaces, so `interm_spaces` is a one-entry vector containing `()`.
+"""
 function create_omlist_cg3(::Type{S},
         q1::NTuple{NZ, Int},
         q2::NTuple{NZ, Int},
@@ -296,7 +340,21 @@ function create_omlist_cg3(::Type{S},
 end
 
 
+"""
+    get_mwstate(irep1, irep2, weight_info, foundvecs_w, remain_inmult,
+                result_qlabels, inprod_info, mwstate_norms, start_index; verbose)
 
+Construct a new maximal-weight vector in one product weight space.
+
+`irep1` and `irep2` are the tensor-product factors. `weight_info` maps product
+z-weight pairs to row ranges inside the product weight space. `foundvecs_w`
+contains already accepted product vectors for this weight. `remain_inmult` is
+diagnostic remaining multiplicity. `result_qlabels` lists already discovered
+output irreps and outer-multiplicity indices. `inprod_info` and
+`mwstate_norms` provide exact metric data for projecting away known subspaces.
+`start_index` chooses the first candidate basis vector to try. The result is
+`(mwstate, next_start_index, mwstate_norm)`.
+"""
 function get_mwstate(irep1::Irep{S, NL, NZ, RT}, 
         irep2::Irep{S, NL, NZ, RT}, 
         weight_info::WeightInfo{NZ},
@@ -378,6 +436,16 @@ function get_mwstate(irep1::Irep{S, NL, NZ, RT},
     return mwstate, start_index + 1, mwstate_norm
 end
 
+"""
+    prodNcfac(A, B, afac::Rational, bfac::Rational)
+
+Multiply two exact arrays with denominator factors and remove a common divisor.
+
+`A` and `B` are multiplied normally. `afac` and `bfac` are rational scale
+factors whose numerators must be one. The returned pair is `(arr, fac)`, where
+`arr` has been divided by the gcd shared with the denominator and `fac` carries
+the remaining exact scale.
+"""
 function prodNcfac(A::AbstractArray,
     B::AbstractArray,
     afac::Rational,
@@ -390,6 +458,16 @@ function prodNcfac(A::AbstractArray,
     return div.(arr, divfac), nfac
 end
 
+"""
+    apply_metric(start_index, irep1, irep2, weight_info; verbose)
+
+Apply the product inner-product metric column associated with `start_index`.
+
+`weight_info` maps each product weight pair `(z1, z2)` to the row range for that
+subspace. The method finds the containing range, extracts the corresponding
+metric columns from `irep1.innerprod[z1]` and `irep2.innerprod[z2]`, forms their
+Kronecker product, and returns `(metric_vector, ist, ied)`.
+"""
 function apply_metric(start_index::Int, 
         irep1::Irep{S, NL, NZ, RT}, 
         irep2::Irep{S, NL, NZ, RT}, 
@@ -402,6 +480,16 @@ function apply_metric(start_index::Int,
     return view(inner_prod1, :, cidx1) ⊗ view(inner_prod2, :, cidx2), ist, ied
 end
 
+"""
+    get_zinfo(start_index::Int, weight_info)
+
+Locate the product z-weight block containing a product-space row.
+
+`start_index` is a one-based row in the product weight space. `weight_info`
+stores `((z1, z2) => (ist, ied))` ranges. The return value is
+`(z1, z2, ist, ied, local_index)`, where `local_index` is the one-based position
+inside the matched block.
+"""
 function get_zinfo(start_index::Int, 
         weight_info::WeightInfo{NZ}) where {NZ}
     # Get the z-values and length of the vector
@@ -416,6 +504,16 @@ function get_zinfo(start_index::Int,
 end
 
 
+"""
+    orthogonalize(v, exv, overlap, exvnorm; verbose)
+
+Orthogonalize candidate vector `v` against one accepted vector `exv`.
+
+`overlap` is `<exv, v>` and `exvnorm` is `<exv, exv>`, both exact integers. The
+returned tuple `(den, cfac, residual)` records the denominator used to clear the
+projection, the common factor removed from the integer residual, and the
+orthogonalized vector itself.
+"""
 function orthogonalize(v::Vector, 
         exv::Vector, 
         overlap::Integer, 
@@ -434,6 +532,20 @@ end
 # from lowering operators of existing irep.
 # 2. We can prevent the overflow of integer values.
 
+"""
+    get_multiplet(::Type{S}, mwstate, prod_inmult, sl_prod, sz_prod,
+                  output_irep, getfull, wout_set, mw; verbose=0, assertlev=0)
+
+Generate all requested weight-space vectors in one output multiplet.
+
+`mwstate` is the maximal-weight vector in product space. `prod_inmult` gives
+product-space multiplicity by z-weight. `sl_prod` and `sz_prod` are lowering
+operators and sector ranges for the product representation. `output_irep`
+defines the target irrep's lowering structure. If `getfull` is true, all target
+weights are generated; otherwise only `wout_set` is filled. `mw` is the
+maximal-weight zlabel. `assertlev > 0` enables a lowering-vanishing check for a
+fully generated multiplet.
+"""
 function get_multiplet(::Type{S}, 
         mwstate::Vector{CT},
         prod_inmult::Dict{NTuple{NZ, Int}, Int},
@@ -464,6 +576,17 @@ function get_multiplet(::Type{S},
     return output_vectors
 end
 
+"""
+    get_wspace!(::Type{S}, output_vectors, targetw, prod_inmult, sl_prod, output_irep; verbose)
+
+Populate one target weight space in a generated multiplet.
+
+`output_vectors` is mutated and maps z-weights to matrices of product-space
+vectors. `targetw` is the weight being filled. `prod_inmult` gives the product
+multiplicity of each weight, `sl_prod` gives product lowering operators, and
+`output_irep` gives the target irrep lowering matrices. The function recursively
+fills higher weights and solves columns by applying lowering relations.
+"""
 function get_wspace!(::Type{S}, 
     output_vectors::Dict{NTuple{NZ, Int}, Matrix{CT}},
     targetw::NTuple{NZ, Int},
@@ -507,6 +630,15 @@ function get_wspace!(::Type{S},
     @assert isempty(remaining_set) 
 end
 
+"""
+    check_vanishing(output_vectors, sl_prod, output_irep; verbose)
+
+Verify terminal lowering conditions for a generated multiplet.
+
+For every weight where the output irrep has no lowering block, the corresponding
+product lowering operator must annihilate the generated states. This is an
+assertion helper for exact CGT construction, not a numerical tolerance check.
+"""
 function check_vanishing(output_vectors::Dict{NTuple{NZ, Int}, Matrix{CT}},
         sl_prod::NTuple{NL, Dict{NTuple{NZ, Int}, SparseMatrixCSC{RT}}},
         output_irep::Irep{S, NL, NZ, RT};
@@ -537,6 +669,17 @@ function check_vanishing(output_vectors::Dict{NTuple{NZ, Int}, Matrix{CT}},
 end
 
 
+"""
+    ⊗(A::SparseArray, B::SparseArray) -> SparseArray
+    ⊗(a::AbstractMatrix, b::AbstractMatrix)
+    ⊗(a::AbstractVector, b::AbstractVector)
+
+Tensor/Kronecker product with the package's reversed factor convention.
+
+For sparse arrays, `A` and `B` must have the same rank and the output size is
+`size(A) .* size(B)`. Matrix and vector methods forward to `kron(b, a)` so the
+operator order matches the Clebsch tensor convention used elsewhere.
+"""
 function ⊗(A::SparseArray{T, N}, B::SparseArray{S, N}) where {T, S, N}
     sizeA = size(A)
     sizeB = size(B)
@@ -559,6 +702,16 @@ end
 ⊗(a::AbstractMatrix, b::AbstractMatrix) = kron(b, a)
 ⊗(a::AbstractVector, b::AbstractVector) = kron(b, a)
 
+"""
+    divcfac(v::SparseVector{<:Integer})
+    divcfac(v::Vector{<:Integer})
+
+Divide an integer vector by the gcd of its nonzero entries.
+
+The return value is `(cfac, reduced_v)`. A zero vector returns factor `1` and
+the original vector. This keeps exact Clebsch vectors primitive and reduces
+integer growth during basis construction.
+"""
 # divide vector by common factor (gcd) of nonzero elements
 # so that nonzero elements of input vector become relative prime each other
 function divcfac(v::SparseVector{<:Integer}) 
@@ -573,6 +726,15 @@ function divcfac(v::Vector{<:Integer})
     return cfac, div.(v, cfac)
 end
 
+"""
+    is_fundamental(::Type{S}, qlabel) -> Bool
+
+Return whether `qlabel` is treated as a fundamental building block.
+
+Most symmetries use unit Dynkin-label qlabels. SO(N) additionally treats the
+spinor/vector doubled labels used by the package's SO convention as fundamental
+for recursive irrep construction.
+"""
 function is_fundamental(::Type{S}, 
     qlabel::NTuple{NZ, Int}) where {S<:NonabelianSymm, NZ}
 
@@ -585,6 +747,16 @@ function is_fundamental(::Type{S},
     return false
 end
 
+"""
+    split_qlabel(::Type{S}, qlabel) -> (bigq, smallq)
+
+Split a non-fundamental qlabel into a smaller remainder and a fundamental part.
+
+`S` selects the symmetry-specific convention. The generic case removes one unit
+from the last nonzero Dynkin coordinate. SO(N) handles odd/even terminal
+coordinates specially so recursive tensor-product construction respects the
+package's doubled/spinor qlabel convention.
+"""
 function split_qlabel(::Type{S}, 
     qlabel::NTuple{NZ, Int}) where {S<:NonabelianSymm, NZ}
     @assert NZ == nzops(S)
@@ -608,6 +780,7 @@ function split_qlabel(::Type{S},
     return bigq, smallq
 end
 
+"""Load or construct the irreducible representation for symmetry `S`, coefficient type `RT`, and q-label `q`. The result is cached in memory/SQLite; q must have width `nzops(S)`."""
 function getNsave_irep(::Type{S}, 
     ::Type{RT}, 
     qlabel::NTuple{NZ, Int}; 
@@ -879,6 +1052,7 @@ end
 # nfac in this function is integer in this case
 # It is inversed in the very last step
 # TODO: If spin representation is implemented, generalize it
+"""Load or construct the one-leg identity (1j) symmetry tensor for `S`, scalar type `RT`, and q-label `q`. Returns cached CGT data used by duality and leg-flip operations."""
 function getNsave_1jsym(::Type{S},
         ::Type{RT},
         ::Type{CT},
@@ -1208,6 +1382,7 @@ end
 # Input : two representation. They should be Irep type
 # with same type parameters (S, NL, NZ, RT)
 # Return the new representation which is the tensor product of two representations.
+"""Form the tensor-product representation of irreps `r1` and `r2`. Returns lowering/weight data, remaining multiplicities, and weight bookkeeping needed by CGT generation; both irreps must share symmetry `S` and scalar type `RT`."""
 function tensor_prod_reps(r1::Irep{S, NL, NZ, RT},
 	r2::Irep{S, NL, NZ, RT};
 	verbose=0) where {S, NL, NZ, RT<:Number}
@@ -1354,9 +1529,20 @@ end
 end
 
 	
-# Convert a CGT object into a float sparse tensor
+"""
+    to_float(cgt, FT=Float64, normalize=true) -> (sparse_cgt, qlabels, directions)
+
+Convert the exact block-sparse Clebsch-Gordan tensor `cgt` to a floating-point
+`SparseArray{FT}`. `FT` selects the output floating-point type. When
+`normalize=true`, the returned outer-multiplicity channels include the exact
+normalization factors stored by `cgt`.
+
+The sparse tensor has one physical axis per CGT leg and a trailing
+outer-multiplicity axis. `qlabels` gives the irrep q-label for every physical
+axis and `directions` records the corresponding `+`/`-` leg directions.
+"""
 function to_float(cgt::CGT{S, CT, NZ, N},
-    ::Type{FT},
+    ::Type{FT}=Float64,
     normalize=true) where {S<:NonabelianSymm, CT<:Number, NZ, N, FT<:AbstractFloat}
 
     qlabels = cgt.qlabels
@@ -1398,7 +1584,6 @@ function to_float(cgt::CGT{S, CT, NZ, N},
     return cgt_float, qlabels, cgt.dir
 end
 
-# Load (or generate if needed) a CGT and convert it into a float sparse tensor
 function load_cg3_float(::Type{S},
     ::Type{CT},
     qlabels_in::NTuple{2, NTuple{NZ, Int}},

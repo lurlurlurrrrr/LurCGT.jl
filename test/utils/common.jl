@@ -9,7 +9,7 @@ function generate_incom(::Type{S}, dim_limit, qlimit=4) where S<:NonabelianSymm
     dim = 1
     while true
         qlabel = Tuple(rand(0:qlimit) for _=1:NZ)
-        irep_dim = LurCGT.dimension(getNsave_irep(S, BigInt, qlabel))
+        irep_dim = LurCGT.dimension(LurCGT.getNsave_irep(S, BigInt, qlabel))
         prod_dim = dim * irep_dim
         if prod_dim > dim_limit break end
         push!(ins, qlabel)
@@ -19,11 +19,11 @@ function generate_incom(::Type{S}, dim_limit, qlimit=4) where S<:NonabelianSymm
 end
 
 function dimension(::Type{S}, qlabel::NTuple{NZ, Int}) where {S<:NonabelianSymm, NZ}
-    irep = getNsave_irep(S, BigInt, qlabel)
+    irep = LurCGT.getNsave_irep(S, BigInt, qlabel)
     return LurCGT.dimension(irep)
 end
 
-function select_out(vo::ValidOuts{S, N, NZ},
+function select_out(vo::LurCGT.ValidOuts{S, N, NZ},
     outlimit=100) where {S<:NonabelianSymm, N, NZ}
     outlist = vo.out_spaces
     outdims = [dimension(S, out) for out in outlist]
@@ -121,7 +121,7 @@ function get_spaces(::Type{S},
     # List of contracted spaces
     contracted_spaces = vcat(contracted_1out2in, contracted_1in2out)
     # Product of dimensions of contracted spaces
-    contracted_dim = prod([LurCGT.dimension(getNsave_irep(S, BigInt, sp)) 
+    contracted_dim = prod([LurCGT.dimension(LurCGT.getNsave_irep(S, BigInt, sp))
                             for sp in contracted_spaces])
 
 

@@ -61,11 +61,10 @@ function test_rsym_from_1j(::Type{S},
         @assert size(rsym_mat_) == (1, 1)
         @assert abs(rsym_mat_[1, 1]) == fac[1].den
 
-        r = getNsave_Rsymbol(S, BigInt, in, out; verbose=0)
+        r = LurCGT.getNsave_Rsymbol(S, BigInt, in, out; verbose=0)
         @assert r.nfactor == fac
         @assert r.rsym_mat == rsym_mat_
         println("R-symbol test passed for input: $(in), output: $(out) with value $(rsym_mat_[1, 1]*fac[1])")
 
     end
 end
-

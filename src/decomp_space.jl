@@ -1,5 +1,25 @@
+"""
+    comm(A, B)
+
+Return the matrix commutator `A * B - B * A`.
+
+Used by local-space construction checks for lowering and Cartan operators.
+"""
 comm(A, B) = A * B - B * A
 
+"""
+    toblk(symm, mat, weight_zips, omvec, nthweight, i, j)
+
+Convert one lowering operator into weight-block sparse matrices.
+
+`symm` is the product symmetry tuple. `mat` is a sparse local-space operator.
+`weight_zips[state]` gives the product weight tuple of each basis state,
+`omvec[weight]` lists basis-state indices with that weight, and
+`nthweight[state]` is the local multiplicity index of that state within its
+weight. `i` selects the symmetry factor and `j` the lowering operator inside
+that factor. The return dictionary is keyed by source weight and stores the
+corresponding lowering block.
+"""
 # i, j: To assert that weights are valid
 function toblk(symm::NTuple{N, Any},
     mat::SparseArray{Float64, 2},
@@ -26,6 +46,16 @@ function toblk(symm::NTuple{N, Any},
     return blks
 end
 
+"""
+    add_vectors!(ortho_vecs_sparse, mult_inds, vectors, stidx, inc, reps, w)
+
+Insert decomposed multiplet basis vectors into the global basis matrix.
+
+`vectors` is an `(multiplicity, irrep-weight indices..., outer_mult)` slice for
+weight `w`. `mult_inds` are original local basis rows carrying that weight.
+`stidx` and `inc` track the flattened output-column offset. `reps` supplies the
+irrep dimensions/ranges needed to recurse over product-symmetry factors.
+"""
 function add_vectors!(ortho_vecs_sparse::SparseMatrixCSC{Float64},
     mult_inds::Vector{Int},
     vectors::Array{Float64, M},
@@ -52,6 +82,15 @@ function add_vectors!(ortho_vecs_sparse::SparseMatrixCSC{Float64},
     end
 end
 
+"""
+    add_irops!(irop_3d, irops, si, reps, w)
+
+Insert transformed IROP blocks into the global three-dimensional sparse array.
+
+`irops` is recursively indexed by product-symmetry weight components. `si` is
+the accumulated flattened sector offset. `reps` and `w` provide the sector
+ranges used to place each 2D IROP matrix at the correct third-axis slice.
+"""
 function add_irops!(irop_3d::SparseArray{Float64, 3},
     irops::Array{SparseMatrixCSC{Float64}, N},
     si::Int,
@@ -76,6 +115,17 @@ end
 
 # Assume that local Hilbert space is orthonormal
 # symm: tuple of symmetries 
+"""
+    decompose_space(symm, weights, lowering_ops)
+
+Decompose a local Hilbert space into symmetry multiplets.
+
+`symm` is the tuple of symmetry types. `weights[n][basis]` gives the z-weight of
+local basis state `basis` under symmetry `n`. `lops[n]` contains the lowering
+operator matrices for symmetry `n`. The result is the orthogonal basis
+transformation and sector-space data used by Telum local spaces. Inputs must
+describe mutually commuting symmetry actions.
+"""
 function decompose_space(symm::NTuple{N, Any},
     weights::NTuple{N, Vector{<:Tuple{Vararg{Int}}}},
     lops::NTuple{N, Vector{<:AbstractMatrix{<:Real}}}) where N
@@ -534,6 +584,7 @@ function test_input(nchannels::Int=3)
 end
 
 # N: The number of symmetries
+"""Decompose sparse irreducible operator `irop` into symmetry blocks. `symm`, `mult_ind`, `space_list`, and `irop_qlabel` describe the representation basis; returns q-label-keyed reduced blocks and multiplicity metadata."""
 function decompose_irop(symm::NTuple{N, Any},
     irop::SparseArray{Float64, 3},
     mult_ind::Dict{NTuple{N, Tuple{Vararg{Int}}}, Vector{Tuple{Int, Int}}},
@@ -586,6 +637,7 @@ function decompose_irop(symm::NTuple{N, Any},
     return data
 end
 
+"""Transform sparse irreducible-operator tensor `irop` in place using basis matrix `vecs`. The first two physical axes are changed consistently; returns the mutated `irop`."""
 function transf_basis!(irop::SparseArray{Float64, 3}, 
     vecs::SparseMatrixCSC{Float64})
     for i in 1:size(irop, 3)
@@ -696,6 +748,7 @@ function get_irops_sector_!(::Val{I},
     end
 end
 
+"""Construct symmetry-adapted irreducible-operator data from `symm`, weight operators `z_ops`, lowering operators, and one maximal-weight local operator. Returns the sparse IROP and its q-label."""
 function get_IROP(symm::NTuple{N, Any},
     z_ops::NTuple{N, Vector{<:Tuple{Vararg{Int}}}},
     lowering_ops::NTuple{N, Vector{<:AbstractMatrix{<:Real}}},

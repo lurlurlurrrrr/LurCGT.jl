@@ -9,31 +9,17 @@ using Nemo
 
 include("Base.jl")
 
+# The exported API is the symmetry interface consumed directly by Telum.
+# Cache/storage and CGT-construction internals remain accessible as `LurCGT.name`.
 export Z, U1, SU, SO, Sp, G2
 export Symmetry, AbelianSymm, NonabelianSymm
 
-export Irep, CGT, Fsymbol, Rsymbol, Xsymbol, CGTperm, CGTSVD, CGTQR, CG3Flip, Conjperm
-export OMList, ValidOuts, FTree
-
-export getNsave_irep, getNsave_cg3, getNsave_Fsymbol, getNsave_Rsymbol
-export getNsave_omlist, getNsave_validout, getNsave_CGTperm, getNsave_CGTSVD, getNsave_CGTQR, getNsave_Xsymbol, getNsave_Conjperm, getNsave_1jsym
-
-export load_cg3_float
-export add_qn, isabelian, nzops, get_dualq, totxt, dimension
-
-export contract_newcg3, contract_om, contract_CG3s
-export FTree2arr, contract_arrs, get_canonical_basis
-export decompose_space, get_IROP, decompose_irop
-export remove_zeros, get_CGTom
-export detect_1j, get_conj_perm, transf_basis!
-export update_fixedint_irrep_catalog, fixedint_dimension_chunks
-export fixedint_canonical_pairs, run_fixedint_cgt_chunk
-export fixedint_catalog_path, fixedint_chunk_result_path
-export collect_fixedint_plot_cells, merge_fixedint_ireps_to_global
-export merge_table_to_global, merge_all_to_global, merge_all
-export finalize_sqlite!, finalize_all_sqlite!
-export sqlite_run_mode, sqlite_local_dir, sqlite_global_dir, sqlite_lock_dir
-export sqlite_stats, clear_sqlite_cache!, close_all_sqlite_dbs
-export delete_closed_local_sqlite_dbs, delete_current_local_sqlite_db, delete_active_global_sqlite_copy
+export add_qn, decompose_irop, decompose_space, detect_1j, dimension
+export get_CGTom, get_IROP, get_conj_perm, get_dualq
+export getNsave_CGTperm, getNsave_CGTSVD, getNsave_CGTQR
+export getNsave_Xsymbol, getNsave_Conjperm
+export getNsave_omlist, getNsave_validout, isabelian
+export nzops, remove_zeros, totxt, transf_basis!
+export to_float
 
 end

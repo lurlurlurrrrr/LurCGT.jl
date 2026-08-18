@@ -1,5 +1,15 @@
 # Overall structure of this file is similar to Fsymbol.jl
 
+"""
+R-move (exchange) coefficients for a pair of CGT fusion spaces.
+
+# Fields
+
+- `in`, `out`: q-labels defining the exchanged fusion channel.
+- `rsym_mat`: dense R-move matrix in the flattened OM basis.
+- `nfactor`: exact normalization factors for matrix entries/basis states.
+- `size_byte`: cached memory footprint for LRU eviction.
+"""
 struct Rsymbol{S<:NonabelianSymm, CT, NZ}
     # Only need degenerate case, so only one q-label is needed
     in::NTuple{NZ, Int}
@@ -18,6 +28,18 @@ struct Rsymbol{S<:NonabelianSymm, CT, NZ}
     end
 end
 
+"""
+    getNsave_Rsymbol(::Type{S}, ::Type{CT}, in, out; verbose=0) -> Rsymbol
+
+Load or compute the exchange matrix for the degenerate fusion `in x in -> out`.
+
+`S` selects the symmetry, `CT` selects the stored scalar type, `in` is the
+exchanged qlabel, and `out` is the fusion output qlabel. The method first checks
+SQLite/cache storage. On a miss, it loads the relevant CG3 block, keeps the
+maximal-weight output part, exchanges the first two inputs, applies the product
+metric to the original block, contracts the overlap matrix, saves the result,
+and returns an `Rsymbol`.
+"""
 function getNsave_Rsymbol(::Type{S},
     ::Type{CT},
     in::NTuple{NZ, Int},
@@ -53,6 +75,14 @@ function getNsave_Rsymbol(::Type{S},
     return rsym_struct
 end
 
+"""
+    permute12(blk) -> Dict
+
+Swap the first two input axes of a CG3 block dictionary.
+
+`blk[(z1, z2)]` stores a rank-3 array with axes `(input1, input2, om)`. The
+returned dictionary uses keys `(z2, z1)` and arrays permuted as `(2, 1, 3)`.
+"""
 function permute12(blk::Dict{NTuple{2, NTuple{NZ, Int}}, Array{CT, 3}}) where {CT<:Number, NZ}
     permuted_blk = Dict{NTuple{2, NTuple{NZ, Int}}, Array{CT, 3}}()
     for (key, value) in blk
@@ -62,6 +92,15 @@ function permute12(blk::Dict{NTuple{2, NTuple{NZ, Int}}, Array{CT, 3}}) where {C
     return permuted_blk
 end
 
+"""
+    conjugate_rsym!(::Type{S}, blk, in)
+
+Apply product inner-product metrics to an R-symbol CG3 block in place.
+
+`blk` maps `(z1, z2)` weight pairs to rank-3 arrays. `in` selects the irrep used
+for both inputs. For each block, the two input axes are contracted with
+`irep.innerprod[z1]` and `irep.innerprod[z2]`.
+"""
 function conjugate_rsym!(::Type{S},
     blk::Dict{NTuple{2, NTuple{NZ, Int}}, Array{CT, 3}},
     in::NTuple{NZ, Int}) where {S<:NonabelianSymm, CT<:Number, NZ}
@@ -78,6 +117,15 @@ function conjugate_rsym!(::Type{S},
     end
 end
 
+"""
+    rsym_rightnormalized(rsym::Rsymbol) -> (Matrix{BigInt}, Integer)
+
+Convert an R-symbol to an integer right-normalized matrix.
+
+`rsym.rsym_mat` is multiplied by `Diagonal(rsym.nfactor)`. The least common
+multiple of denominators is pulled out as `nfac`, and the returned matrix is
+integer-valued. This form is used by exact fusion-tree recoupling.
+"""
 function rsym_rightnormalized(rsym::Rsymbol{S, CT, NZ}) where {S<:NonabelianSymm, CT<:Number, NZ}
     @assert nzops(S) == NZ
     mat_rational = rsym.rsym_mat * Diagonal(rsym.nfactor)

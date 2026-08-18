@@ -7,10 +7,10 @@ function test_hdf5_io(::Type{S}) where {S<:NonabelianSymm}
     println("Testing Irep save/load...")
     test_qlabel = ntuple(i -> i == 1 ? 2 : (i == 2 && NZ >= 2 ? 1 : 0), NZ)
     # Use getNsave to generate and save
-    irep_orig = getNsave_irep(S, BigInt, test_qlabel)
+    irep_orig = LurCGT.getNsave_irep(S, BigInt, test_qlabel)
     
     # Load directly to verify save worked
-    irep_loaded = getNsave_irep(S, BigInt, test_qlabel)
+    irep_loaded = LurCGT.getNsave_irep(S, BigInt, test_qlabel)
     @assert !isnothing(irep_loaded)
     @assert irep_loaded.qlabel == irep_orig.qlabel
     @assert irep_loaded.dimension == irep_orig.dimension
@@ -30,7 +30,7 @@ function test_hdf5_io(::Type{S}) where {S<:NonabelianSymm}
     possible_out = vo.out_spaces[1]
     
     # Use getNsave_cg3 to verify data accessibility
-    cg3s_loaded = getNsave_cg3(S, BigInt, (q1, q2), [possible_out])
+    cg3s_loaded = LurCGT.getNsave_cg3(S, BigInt, (q1, q2), [possible_out])
     @assert !isnothing(cg3s_loaded)
     @assert !isempty(cg3s_loaded[possible_out].blocks)
     @assert length(cg3s_loaded[possible_out].nfactor) > 0
@@ -45,7 +45,7 @@ function test_hdf5_io(::Type{S}) where {S<:NonabelianSymm}
     out = vo_f.out_spaces[1]
     
     # Use getNsave to generate and save
-    fsym = getNsave_Fsymbol(S, BigInt, in1, in2, in3, out; verbose=0)
+    fsym = LurCGT.getNsave_Fsymbol(S, BigInt, in1, in2, in3, out; verbose=0)
     @assert !isnothing(fsym)
     @assert fsym.in1 == in1
     @assert fsym.in2 == in2
@@ -53,7 +53,7 @@ function test_hdf5_io(::Type{S}) where {S<:NonabelianSymm}
     @assert fsym.out == out
     
     # Call again to verify load works
-    fsym_loaded = getNsave_Fsymbol(S, BigInt, in1, in2, in3, out; verbose=0)
+    fsym_loaded = LurCGT.getNsave_Fsymbol(S, BigInt, in1, in2, in3, out; verbose=0)
     @assert !isnothing(fsym_loaded)
     @assert size(fsym_loaded.fsym_mat) == size(fsym.fsym_mat)
     println("  F-symbol save/load: PASSED")
@@ -63,13 +63,13 @@ function test_hdf5_io(::Type{S}) where {S<:NonabelianSymm}
     in_r = q1
     out_r = q1 .* 2
     # Use getNsave to generate and save
-    rsym = getNsave_Rsymbol(S, BigInt, in_r, out_r; verbose=0)
+    rsym = LurCGT.getNsave_Rsymbol(S, BigInt, in_r, out_r; verbose=0)
     @assert !isnothing(rsym)
     @assert rsym.in == in_r
     @assert rsym.out == out_r
     
     # Call again to verify load works
-    rsym_loaded = getNsave_Rsymbol(S, BigInt, in_r, out_r; verbose=0)
+    rsym_loaded = LurCGT.getNsave_Rsymbol(S, BigInt, in_r, out_r; verbose=0)
     @assert !isnothing(rsym_loaded)
     @assert size(rsym_loaded.rsym_mat) == size(rsym.rsym_mat)
     println("  R-symbol save/load: PASSED")
@@ -115,14 +115,14 @@ function test_hdf5_threadsafety(::Type{S}) where {S<:NonabelianSymm}
     # Generate some test data first using getNsave
     test_qlabels = [ntuple(i -> i <= j ? 1 : 0, NZ) for j in 0:min(3, NZ)]
     for q in test_qlabels
-        getNsave_irep(S, BigInt, q)
+        LurCGT.getNsave_irep(S, BigInt, q)
     end
     
     # Concurrent reads using getNsave (which will load from cache)
     results = Vector{Any}(undef, length(test_qlabels))
     println(Threads.nthreads(), " threads will be used for concurrent reads.")
     Threads.@threads for i in 1:length(test_qlabels)
-        results[i] = getNsave_irep(S, BigInt, test_qlabels[i])
+        results[i] = LurCGT.getNsave_irep(S, BigInt, test_qlabels[i])
     end
     
     # Verify all reads succeeded
@@ -134,4 +134,3 @@ function test_hdf5_threadsafety(::Type{S}) where {S<:NonabelianSymm}
     println("  Thread-safe concurrent reads: PASSED")
     println("Thread-safety test completed!")
 end
-

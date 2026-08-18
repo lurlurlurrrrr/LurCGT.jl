@@ -3,7 +3,7 @@ function test_permutation(::Type{S}, ins, out, perm, ::Type{FT}; verbose=0) wher
     FTree = LurCGT.random_FTree(S, Tuple(ins), (out,))
 
     # First, get an Float array and permute
-    arr_perm = FTree2arr(FTree, FT)
+    arr_perm = LurCGT.FTree2arr(FTree, FT)
     arr_perm = permutedims(arr_perm, perm)
 
     # Second, get a permuted FTree and convert it to array
@@ -11,7 +11,7 @@ function test_permutation(::Type{S}, ins, out, perm, ::Type{FT}; verbose=0) wher
     for (i, j) in switch_list
         FTree = LurCGT.permute_adjacent!(FTree, i, j; verbose)
     end
-    arr_perm2 = FTree2arr(FTree, FT)
+    arr_perm2 = LurCGT.FTree2arr(FTree, FT)
 
     # The two results should be the same
     return arr_perm, arr_perm2, norm(arr_perm - arr_perm2)
@@ -67,4 +67,3 @@ function get_rand_perm(N)
         if perm != collect(1:N) return Tuple(perm) end # not identity permutation
     end
 end
-

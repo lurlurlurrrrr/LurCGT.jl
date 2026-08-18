@@ -279,6 +279,7 @@ function get_split_basis_matrix(::Type{S},
     return basis_rows, bond_sps
 end
 
+"""Load or compute CGT basis data for a symmetry-respecting SVD split. Arguments specify symmetry `S`, upper/lower spaces, selected left legs, and optional persistence; the result maps CGT outer-multiplicity bases across the SVD bond."""
 function getNsave_CGTSVD(::Type{S},
     upsp::NTuple{U, NTuple{NZ, Int}},
     dnsp::NTuple{D, NTuple{NZ, Int}},

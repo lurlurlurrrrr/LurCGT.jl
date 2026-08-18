@@ -2,7 +2,7 @@ function Rsymbol_toreal(::Type{S},
     ::Type{CT}, 
     in::NTuple{NZ, Int}, 
     out::NTuple{NZ, Int}) where {S<:NonabelianSymm, CT<:Number, NZ}
-    rsym = getNsave_Rsymbol(S, CT, in, out)
+    rsym = LurCGT.getNsave_Rsymbol(S, CT, in, out)
     mat = rsym.rsym_mat
     
     sz = size(mat)[1]
@@ -21,7 +21,7 @@ function Rsymbol_fullarr(::Type{S},
     out::NTuple{NZ, Int}) where {S<:NonabelianSymm, NZ}
 
     # in ⊗ in -> out
-    blk, _, _ = load_cg3_float(S, BigInt, (in, in, out))
+    blk, _, _ = LurCGT.load_cg3_float(S, BigInt, (in, in, out))
     out_dim = size(blk, 3)
     @tensor rsym[ν, μ] := blk[i2, i1, out, μ] * blk[i1, i2, out, ν]
     return Matrix{Float64}(rsym / out_dim)
@@ -45,4 +45,3 @@ function get_random_Rsymbol_real(::Type{S}, ::Type{FT}, qlimit=4) where {S<:Nona
     out = select_out(vo, 100)
     return qlabel, out, Rsymbol_toreal(S, BigInt, qlabel, out)
 end
-

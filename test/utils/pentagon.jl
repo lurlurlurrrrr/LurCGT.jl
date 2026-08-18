@@ -42,8 +42,8 @@ function test_pentagon(::Type{S},
     println("Pentagon test passed.")
 end
 
-function compare_FTrees(FTree1::FTree{S, 4},
-    FTree2::FTree{S, 4};
+function compare_FTrees(FTree1::LurCGT.FTree{S, 4},
+    FTree2::LurCGT.FTree{S, 4};
     verbose=0) where S<:NonabelianSymm
 
     @assert FTree1.ins == FTree2.ins
@@ -64,7 +64,7 @@ function compare_FTrees(FTree1::FTree{S, 4},
     end
 end
 
-function change_internal_order(FTree::FTree{S, 4}) where S<:NonabelianSymm
+function change_internal_order(FTree::LurCGT.FTree{S, 4}) where S<:NonabelianSymm
     NZ = nzops(S)
     ncoeff = Dict{NTuple{2, NTuple{NZ, Int}}, Array{BigInt, 3}}()
     ncoeff_nfac = Dict{NTuple{2, NTuple{NZ, Int}}, Rational{BigInt}}()
@@ -81,7 +81,7 @@ function change_internal_order(FTree::FTree{S, 4}) where S<:NonabelianSymm
     return new_FTree
 end
 
-function path1s1_iofunc(FTree::FTree{S, 4},
+function path1s1_iofunc(FTree::LurCGT.FTree{S, 4},
     rem::NTuple{1, NTuple{NZ, Int}},
     i::Int) where {S<:NonabelianSymm, NZ}
 
@@ -89,7 +89,7 @@ function path1s1_iofunc(FTree::FTree{S, 4},
     return (rem[1], FTree.ins[3], FTree.ins[4], FTree.outs[1])
 end
 
-function path1s2_iofunc(FTree::FTree{S, 4},
+function path1s2_iofunc(FTree::LurCGT.FTree{S, 4},
     rem::NTuple{1, NTuple{NZ, Int}},
     i::Int) where {S<:NonabelianSymm, NZ}
 
@@ -97,7 +97,7 @@ function path1s2_iofunc(FTree::FTree{S, 4},
     return (FTree.ins[1], FTree.ins[2], rem[1], FTree.outs[1])
 end
 
-function path2s1_iofunc(FTree::FTree{S, 4},
+function path2s1_iofunc(FTree::LurCGT.FTree{S, 4},
     rem::NTuple{1, NTuple{NZ, Int}},
     i::Int) where {S<:NonabelianSymm, NZ}
 
@@ -105,7 +105,7 @@ function path2s1_iofunc(FTree::FTree{S, 4},
     return (FTree.ins[1], FTree.ins[2], FTree.ins[3], rem[1])
 end
 
-function path2s2_iofunc(FTree::FTree{S, 4},
+function path2s2_iofunc(FTree::LurCGT.FTree{S, 4},
     rem::NTuple{1, NTuple{NZ, Int}},
     i::Int) where {S<:NonabelianSymm, NZ}
 
@@ -113,11 +113,10 @@ function path2s2_iofunc(FTree::FTree{S, 4},
     return (FTree.ins[1], rem[1], FTree.ins[4], FTree.outs[1])
 end
 
-function path2s3_iofunc(FTree::FTree{S, 4},
+function path2s3_iofunc(FTree::LurCGT.FTree{S, 4},
     rem::NTuple{1, NTuple{NZ, Int}},
     i::Int) where {S<:NonabelianSymm, NZ}
 
     @assert NZ == nzops(S) && i == 2
     return (FTree.ins[2], FTree.ins[3], FTree.ins[4], rem[1])
 end
-

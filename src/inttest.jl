@@ -5,6 +5,18 @@ totxt(::Type{BigInt}) = "BigInt"
 totxt(::Type{Int128}) = "Int128"
 totxt(::Type{Int64}) = "Int64"
 
+"""
+Fixed-integer representation magnitude summary used to order compatibility scans.
+
+# Fields
+
+- `qlabel`: representation q-label.
+- `dim`: representation dimension; primary ordering key.
+- `matelem_max`: largest lowering-operator matrix element encountered.
+- `innerprod_max`: largest inner-product matrix entry encountered.
+- `inv_innerprod_max`: largest inverse-inner-product matrix entry encountered.
+- `inv_innerprod_fac_max`: largest exact inverse-inner-product normalization factor.
+"""
 struct irep_maxnums{S<:NonabelianSymm, NZ}
     qlabel::NTuple{NZ, Int}
     # Dimension of the irrep. Sorted by dimension
@@ -332,6 +344,7 @@ function fixedint_data_dir(::Type{S},
     return joinpath(base_dir, totxt(RT), totxt(S))
 end
 
+"""Return the catalog serialization path for symmetry `S` and fixed integer type `RT`. `base_dir` selects the test-data root; the parent directory is created as a side effect."""
 function fixedint_catalog_path(::Type{S},
     ::Type{RT};
     base_dir=fixedint_default_base_dir()) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}}
@@ -340,6 +353,7 @@ function fixedint_catalog_path(::Type{S},
     return joinpath(dir, "catalog.jls")
 end
 
+"""Return the serialization path for fixed-integer CGT test ranges `range1` and `range2`. `S`, `RT`, and `base_dir` choose the data hierarchy; the chunk directory is created as a side effect."""
 function fixedint_chunk_result_path(::Type{S},
     ::Type{RT},
     range1::Tuple{Int, Int},
@@ -405,6 +419,7 @@ function save_fixedint_catalog(::Type{S},
     return catalog
 end
 
+"""Merge locally generated fixed-integer irrep rows for symmetry `S` into global SQLite storage. `clear_local_after` controls post-merge cleanup, `verbose` controls reporting, and `merge_fn` permits an alternate merge implementation. Returns the merge summary."""
 function merge_fixedint_ireps_to_global(::Type{S};
     clear_local_after::Bool=true,
     verbose=1,
@@ -412,6 +427,7 @@ function merge_fixedint_ireps_to_global(::Type{S};
     return merge_fn(S, "irreps"; clear_local_after=clear_local_after, verbose=verbose)
 end
 
+"""Scan irreps for symmetry `S` and integer type `RT` up to `maxdim`, then update the compatibility catalog. `maxcount` limits new scans; `save` serializes the result; `base_dir` selects storage; optional merge keywords merge accepted local irreps. Returns the new catalog named tuple."""
 function update_fixedint_irrep_catalog(::Type{S},
     ::Type{RT};
     maxdim::Int,
@@ -475,6 +491,7 @@ function update_fixedint_irrep_catalog(::Type{S},
     return new_catalog
 end
 
+"""Split inclusive integer dimension interval `dmin:dmax` into at most `m` balanced contiguous `(lo, hi)` chunks. Both bounds are retained; invalid reversed bounds or nonpositive `m` throw `ArgumentError`."""
 function fixedint_dimension_chunks(dmin::Int, dmax::Int, m::Int)
     dmin <= dmax || throw(ArgumentError("dimension min must be <= max"))
     m > 0 || throw(ArgumentError("chunk count must be positive"))
@@ -488,6 +505,7 @@ function fixedint_dimension_chunks(dmin::Int, dmax::Int, m::Int)
     return ranges
 end
 
+"""Return deterministic non-duplicated q-label/dimension pairs from accepted-entry collections `entries1` and `entries2`. Equal-dimension pairs are canonicalized by q-label order; the returned named tuples are sorted for reproducible chunk work."""
 function fixedint_canonical_pairs(entries1, entries2)
     pairs = NamedTuple[]
     for entry1 in entries1, entry2 in entries2
@@ -498,6 +516,7 @@ function fixedint_canonical_pairs(entries1, entries2)
     return sort!(pairs; by=pair -> (pair.dim1, pair.dim2, pair.q1, pair.q2))
 end
 
+"""Run one fixed-integer CGT generation-test chunk. Dimension bounds and `m1`/`m2` define chunks; `chunk1`/`chunk2` select one pair. `base_dir` locates data, `save` serializes the summary, and optional keywords update/merge catalogs or inject generation functions. Returns a named summary with per-pair status."""
 function run_fixedint_cgt_chunk(::Type{S},
     ::Type{RT},
     d1min::Int,
@@ -570,6 +589,7 @@ function run_fixedint_cgt_chunk(::Type{S},
     return summary
 end
 
+"""Collect passed/failed dimension cells from serialized fixed-integer chunk results for `S` and `RT`. `base_dir` selects the data root. Missing chunk directories return an empty vector; otherwise returns sorted `(dim1, dim2, status)` named tuples."""
 function collect_fixedint_plot_cells(::Type{S},
     ::Type{RT};
     base_dir=fixedint_default_base_dir()) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}}

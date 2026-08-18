@@ -1,11 +1,29 @@
 # Tableau object consist of length(shape) rows, with shape[i] boxes in the i-th row.
 # colread is a vector representing the column reading of the tableau.
 # Each column is read from bottom to top, and columns are read from right to left.
+"""
+Mutable crystal tableau for symmetry `S`.
+
+# Fields
+
+- `shape`: number of boxes in each tableau row, from top row downward.
+- `colread`: entries in canonical column-reading order (bottom-to-top within a column, right-to-left across columns).
+"""
 struct Tableau{S<:NonabelianSymm}
     shape::Vector{Int}
     colread::Vector{Int}
 end
 
+"""
+Precomputed crystal operation tables for non-Abelian symmetry `S`.
+
+# Fields
+
+- `f`: per-simple-root lowering transition maps between tableau entries.
+- `e`: per-simple-root raising transition maps.
+- `ϕ`: maximum repeated-lowering count keyed by `(entry, root)`.
+- `ϵ`: maximum repeated-raising count keyed by `(entry, root)`.
+"""
 struct Crystal_ops{S<:NonabelianSymm}
     f::Vector{Dict{Int, Int}}  # lowering operators
     e::Vector{Dict{Int, Int}}  # raising operators

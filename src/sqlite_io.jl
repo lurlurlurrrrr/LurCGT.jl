@@ -82,10 +82,12 @@ function sqlite_run_mode(env::AbstractDict=ENV)
     return mode
 end
 
+"""Return the configured source directory for process-local SQLite data. `env` supplies environment-variable overrides; this path is used directly in local mode and as the copy source in server mode."""
 sqlite_local_source_dir(env::AbstractDict=ENV) =
     _resolve_storage_dir(something(_nonempty_env_value(env, "LURCGT_LOCALDB_DIR"),
                                    joinpath(homedir(), ".LurCGT_sqlite", "local")))
 
+"""Return the configured source directory for shared SQLite data. `env` supplies environment-variable overrides; this path is used directly in local mode and as the copy source in server mode."""
 sqlite_global_source_dir(env::AbstractDict=ENV) =
     _resolve_storage_dir(something(_nonempty_env_value(env, "LURCGT_GLOBALDB_DIR"),
                                    joinpath(homedir(), ".LurCGT_sqlite", "global")))
@@ -142,6 +144,7 @@ sqlite_merge_global_dir(env::AbstractDict=ENV) =
 
 sqlite_merge_lock_dir(env::AbstractDict=ENV) = joinpath(sqlite_merge_global_dir(env), "locks")
 
+"""Return the source (persistent) SQLite path for non-Abelian symmetry `S`. `location` is `:local` or `:global`; `env` and `process_id` select directories/database names. Unlike `sqlite_db_path`, server mode does not redirect this path to node-local storage."""
 function sqlite_db_source_path(::Type{S}, location::Symbol=:local;
                                env::AbstractDict=ENV,
                                process_id::AbstractString=process_local_id()) where {S<:NonabelianSymm}
@@ -153,6 +156,7 @@ function sqlite_db_source_path(::Type{S}, location::Symbol=:local;
     return joinpath(sqlite_local_source_dir(env), symm_name, "$(process_id).db")
 end
 
+"""Return the active SQLite database path for non-Abelian symmetry `S`. `location` is `:local` or `:global`; `env` selects directories and `process_id` selects a local database. The function computes a path only and does not open/create the database."""
 function sqlite_db_path(::Type{S}, location::Symbol=:local;
                         env::AbstractDict=ENV,
                         process_id::AbstractString=process_local_id()) where {S<:NonabelianSymm}
@@ -164,6 +168,7 @@ function sqlite_db_path(::Type{S}, location::Symbol=:local;
     return joinpath(sqlite_local_dir(env), symm_name, "$(process_id).db")
 end
 
+"""Return the global SQLite path used as a merge target for symmetry `S`. `env` determines whether this is the persistent source-global path or the active local-mode global path; no file is opened."""
 function sqlite_merge_global_db_path(::Type{S}; env::AbstractDict=ENV) where {S<:NonabelianSymm}
     return joinpath(sqlite_merge_global_dir(env), "$(totxt(S)).db")
 end
@@ -195,6 +200,7 @@ function _prepare_server_sqlite_db(::Type{S}, location::Symbol, path::AbstractSt
     return nothing
 end
 
+"""Build the identifier used to isolate process-local SQLite databases. `env` may supply SLURM job/task variables; `hostname` and `pid` default to the current process and are injectable for testing. Returns a filesystem-safe string."""
 function build_process_local_id(env::AbstractDict=ENV;
                                 hostname::AbstractString=gethostname(),
                                 pid::Integer=getpid())
@@ -255,11 +261,13 @@ function _init_sqlite_db(db::SQLite.DB)
 end
 
 """
-Get or create SQLite database for a symmetry type.
+    get_sqlite_db(S, location=:local)
 
-Locations:
-- :global - Shared database, read by all processes, written only during merge
-- :local  - Per-process database (one per process ID), no write contention
+Open or reuse LurCGT's SQLite database for non-Abelian symmetry `S`.
+`location` must be `:local` (per process) or `:global` (shared). The returned
+`SQLite.DB` connection is cached, its parent directory/database is created as
+needed, and it is initialized with WAL/performance settings. Global writes
+should be performed through merge/finalize operations to avoid contention.
 """
 function get_sqlite_db(::Type{S}, location::Symbol=:local) where {S<:NonabelianSymm}
     @assert location in (:local, :global)
@@ -278,6 +286,7 @@ function get_sqlite_db(::Type{S}, location::Symbol=:local) where {S<:NonabelianS
     end
 end
 
+"""Open or reuse the SQLite merge-target database for symmetry `S`. The connection is cached separately from ordinary global reads, initialized on demand, and must be used by merge/finalize code to serialize global writes."""
 function get_sqlite_merge_global_db(::Type{S}) where {S<:NonabelianSymm}
     _mark_sqlite_symmetry_used(S)
     path = sqlite_merge_global_db_path(S)
@@ -324,8 +333,10 @@ deserialize_irep(data) = deserialize_object(data)
 # ============================================================================
 
 """
-Save object to SQLite local database.
-Tables are pre-created at DB init, so no CREATE TABLE here.
+Serialize `obj` and upsert it under string `key` in local SQLite `table_name`
+for symmetry `S`. Tables are created during database initialization; `verbose`
+controls reporting. Callers must use a package-schema table name. This is a
+local write; global data is updated later by merge/finalize operations.
 """
 function save_object_sqlite(::Type{S}, table_name::String, key::String, obj;
                            verbose=0) where {S<:NonabelianSymm}
@@ -339,7 +350,10 @@ function save_object_sqlite(::Type{S}, table_name::String, key::String, obj;
 end
 
 """
-Load object from SQLite. Tries global DB first, then local.
+Load and deserialize object `key` from SQLite `table_name` for symmetry `S`.
+The global database is searched first, followed by the local process database.
+Returns `nothing` for a missing key; `verbose` controls hit/miss reporting, and
+non-SQLite serialization/database errors propagate.
 """
 function load_object_sqlite(::Type{S}, table_name::String, key::String;
                            verbose=0) where {S<:NonabelianSymm}
@@ -368,7 +382,7 @@ end
 # Generic Cached Save/Load (cache + DB)
 # ============================================================================
 
-"""Save object to DB and update the given cache."""
+"""Internal write-through helper: persist `obj` under `db_key` then update typed in-memory `cache` at `cache_key` under `cache_lock`. `table_name` and `S` select the SQLite table; `verbose` is forwarded to the write."""
 function _cached_save(::Type{S}, table_name::String, db_key::String, cache_key::Tuple, obj,
                       cache::LRU, cache_lock::ReentrantLock;
                       verbose=0) where {S<:NonabelianSymm}
@@ -379,7 +393,7 @@ function _cached_save(::Type{S}, table_name::String, db_key::String, cache_key::
     return nothing
 end
 
-"""Load object from the given cache, falling back to DB. Updates cache on DB hit."""
+"""Internal read-through helper: look up `cache_key` in `cache` under `cache_lock`; on a miss, obtain a SQLite key from `db_key_func`, load from `table_name` for `S`, and cache a successful result. `verbose` is forwarded to the storage lookup."""
 function _cached_load(db_key_func::F, ::Type{S}, table_name::String, cache_key::Tuple,
                       cache::LRU, cache_lock::ReentrantLock;
                       verbose=0) where {F, S<:NonabelianSymm}
@@ -1029,6 +1043,14 @@ function _delete_sqlite_file_set(path::AbstractString; verbose=0)
     return deleted_any
 end
 
+"""
+    delete_current_local_sqlite_db(S; env=ENV, process_id=process_local_id())
+
+Delete the current process's local SQLite database and WAL/SHM sidecars for
+non-Abelian symmetry `S`. `env` selects the storage root, `process_id` selects
+the database, and `verbose` reports deletion. This is destructive; returns a
+one-element vector containing the deleted base path or an empty vector.
+"""
 function delete_current_local_sqlite_db(::Type{S}; env::AbstractDict=ENV,
                                         process_id::AbstractString=process_local_id(),
                                         verbose=0) where {S<:NonabelianSymm}
@@ -1036,6 +1058,14 @@ function delete_current_local_sqlite_db(::Type{S}; env::AbstractDict=ENV,
     return _delete_sqlite_file_set(path; verbose) ? String[path] : String[]
 end
 
+"""
+    delete_active_global_sqlite_copy(S; env=ENV)
+
+In server mode, delete the active node-local copy of non-Abelian symmetry `S`'s
+global SQLite database and sidecars. `env` selects paths and `verbose` reports
+deletion. This is destructive but never deletes the source/global database;
+local mode returns an empty vector without changes.
+"""
 function delete_active_global_sqlite_copy(::Type{S}; env::AbstractDict=ENV,
                                           verbose=0) where {S<:NonabelianSymm}
     sqlite_run_mode(env) == "server" || return String[]

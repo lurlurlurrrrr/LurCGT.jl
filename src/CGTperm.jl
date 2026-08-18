@@ -1,3 +1,28 @@
+"""
+    CGTperm{S,U,D,N,NZ}
+
+Cached outer-multiplicity basis transform for a non-Abelian CGT leg
+permutation.
+
+`S` is the symmetry type. `U` and `D` are the numbers of upper and lower CGT
+legs. `N == U + D` is the number of permuted physical legs. `NZ` is the q-label
+tuple width for `S`.
+
+The transform is only needed when a permutation changes the canonical
+fusion-tree basis inside a non-Abelian CGT. Abelian symmetries and permutations
+that become identity after removing trivial zero legs use `nothing` instead.
+
+# Fields
+
+- `perm_arr`: dense matrix whose columns are source flattened OM basis states
+  and whose rows are permuted canonical OM basis states.
+- `upsp`: sorted upper/outgoing q-label tuple used to define the source CGT.
+- `dnsp`: sorted lower/incoming q-label tuple used to define the source CGT.
+- `perm`: requested physical-leg permutation in concatenated
+  `(upsp..., dnsp...)` indexing. Standardized cached objects only permute upper
+  legs among upper positions and lower legs among lower positions.
+- `size_byte`: cached memory footprint for LRU eviction.
+"""
 struct CGTperm{S<:NonabelianSymm, U, D, N, NZ}
     perm_arr::Array{Float64, 2}
     upsp::NTuple{U, NTuple{NZ, Int}}  # outgoing spaces
@@ -14,6 +39,17 @@ struct CGTperm{S<:NonabelianSymm, U, D, N, NZ}
     end
 end
 
+"""
+    perm_FTrees!(FTrees_dict, perm) -> nothing
+
+Permute every fusion tree stored in a CGT canonical-basis dictionary.
+
+`FTrees_dict[csp]` is the vector of `FTree` basis elements for intermediate
+space `csp`. `perm` is an incoming-leg permutation for those trees, expressed
+in the output-position convention consumed by `Base.permute!(::FTree, ...)`.
+The function mutates each vector in place by replacing every basis tree with
+the result of the exact R/F-symbol recoupling permutation.
+"""
 function perm_FTrees!(FTrees_dict::Dict{NTuple{NZ, Int}, Vector{FTree{S, N, NZ}}}, 
     perm::NTuple{M, Int}) where {S<:NonabelianSymm, N, M, NZ}
 
@@ -26,6 +62,23 @@ function perm_FTrees!(FTrees_dict::Dict{NTuple{NZ, Int}, Vector{FTree{S, N, NZ}}
     end
 end
 
+"""
+    fill_CGTperm_matrix!(S, CGTperm_arr, CGT_oms, CGT_FTrees_up, CGT_FTrees_dn)
+        -> nothing
+
+Fill the OM-basis transform matrix for a CGT leg permutation.
+
+`S` is the symmetry type. `CGTperm_arr` is the preallocated dense matrix to
+fill; its shape must be `(CGT_oms.totalOM, CGT_oms.totalOM)`. `CGT_oms`
+describes the flattened source outer-multiplicity ordering. `CGT_FTrees_up` and
+`CGT_FTrees_dn` contain the already-permuted upper and lower fusion-tree basis
+vectors, keyed by central q-label.
+
+For source column `i`, the method looks up `(central space, upper OM index,
+lower OM index)`, contracts the corresponding upper/down trees through a unit
+identity tree on the central space, converts the result back to the canonical
+OM vector, and writes that vector into column `i`.
+"""
 function fill_CGTperm_matrix!(::Type{S},
     CGTperm_arr::Array{Float64, 2},
     CGT_oms::CGTom{S, NZ},
@@ -43,6 +96,22 @@ function fill_CGTperm_matrix!(::Type{S},
     end
 end
 
+"""
+    remove_zeros(::Type{S}, spaces, perm) -> (spaces_, perm_)
+
+Remove leading trivial qlabel legs from a CGT permutation problem.
+
+`S` supplies the zero q-label width. `spaces` is a tuple of q-labels from either
+the upper or lower side of a CGT. `perm` is the side-local permutation over
+those positions. Leading zero-q-label legs do not contribute nontrivial
+non-Abelian permutation data, so the method strips the prefix ending at the last
+leading trivial label and shifts the remaining permutation down by the removed
+count.
+
+If every space is trivial, the standardized representation is a single trivial
+space with identity permutation. This keeps downstream code from having to
+handle empty upper/lower fusion-tree problems.
+"""
 function remove_zeros(::Type{S}, 
     spaces::Tuple{}, 
     perm::Tuple{}) where {S<:NonabelianSymm}
@@ -64,6 +133,22 @@ function remove_zeros(::Type{S}, spaces::NTuple{M, NTuple{NZ, Int}},
     return spcs, perm_
 end
 
+"""
+    getNsave_CGTperm(::Type{S}, upsp, dnsp, perm; save=true) -> Union{Nothing,CGTperm}
+
+Load or compute the OM-basis transform for a CGT leg permutation.
+
+`S` is the symmetry type. `upsp` and `dnsp` are sorted q-label tuples for the
+upper/outgoing and lower/incoming CGT leg groups. `perm` is the requested
+permutation in concatenated `(upsp..., dnsp...)` indexing. `save` controls
+SQLite persistence for generated non-Abelian transforms.
+
+For Abelian symmetries the method returns `nothing`, because no nontrivial
+outer-multiplicity basis transform exists. For non-Abelian symmetries, leading
+zero q-labels are removed independently on the upper and lower sides before the
+standard cache key is formed. If the standardized permutation is identity,
+`nothing` is returned as an effective no-op.
+"""
 getNsave_CGTperm(::Type{S},
     upsp::NTuple{U, NTuple{NZ, Int}},
     dnsp::NTuple{D, NTuple{NZ, Int}},
@@ -87,6 +172,21 @@ function getNsave_CGTperm(::Type{S},
     getNsave_CGTperm_std(S, upsp_, dnsp_, perm_; save=save)
 end
 
+"""
+    getNsave_CGTperm_std(::Type{S}, upsp, dnsp, perm; save=true) -> CGTperm
+
+Load or compute a standardized nontrivial non-Abelian CGT permutation.
+
+`S` is the symmetry type. `upsp` and `dnsp` are standardized sorted q-label
+tuples with removable trivial leading labels already stripped. `perm` is the
+standardized concatenated permutation and must preserve the upper/lower split:
+upper output positions map to upper source legs and lower output positions map
+to lower source legs. `save` controls persistence on a cache miss.
+
+The function validates that applying `perm` leaves the q-label multiset in the
+same order required by canonical CGT storage, then checks SQLite cache before
+delegating to `computeNsave_CGTperm_std`.
+"""
 function getNsave_CGTperm_std(::Type{S},
     upsp::NTuple{U, NTuple{NZ, Int}},
     dnsp::NTuple{D, NTuple{NZ, Int}},
@@ -107,6 +207,22 @@ function getNsave_CGTperm_std(::Type{S},
     return computeNsave_CGTperm_std(S, upsp, dnsp, perm; save)
 end
 
+"""
+    computeNsave_CGTperm_std(::Type{S}, upsp, dnsp, perm; save=true) -> CGTperm
+
+Compute a non-Abelian CGT permutation matrix from fusion-tree recouplings.
+
+`S` is the symmetry type. `upsp` and `dnsp` define the standardized canonical
+CGT fusion problem. `perm` permutes legs within the upper and lower groups.
+`save` determines whether the completed object is written to SQLite.
+
+The method builds canonical upper/down fusion-tree bases for every common
+central space, applies side-local tree permutations, contracts each permuted
+basis pair back through a central identity tree, and fills the dense transform
+matrix column by column. When the total outer multiplicity is greater than one,
+CGT norms are used to convert between normalized and unnormalized OM vector
+conventions before optional persistence.
+"""
 function computeNsave_CGTperm_std(::Type{S},
     upsp::NTuple{U, NTuple{NZ, Int}},
     dnsp::NTuple{D, NTuple{NZ, Int}},

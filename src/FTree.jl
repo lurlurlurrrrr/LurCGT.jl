@@ -1,8 +1,23 @@
 # NI: Number of incoming spaces, NO: Number of outgoing spaces
+"""Abstract representation of an exact CG3 contraction state. Type parameters encode symmetry, incoming/outgoing leg counts, and q-label width for generated recoupling dispatch."""
 abstract type AbstractCG3contract{S, NI, NO, NZ} end
 
 # Linear combination of fusion trees in TensorKit.jl
 # NI is the number of incoming spaces, nonzero positive integer
+"""
+    FTree
+
+A linear combination of fusion trees with `NI` incoming and one outgoing leg.
+`ins` and `outs` give external q-labels; `coeff` stores exact integer tree
+coefficients keyed by intermediate q-labels; and `coeff_nfac` stores rational
+normalization factors. It is used internally to construct CGT recouplings.
+
+# Fields
+
+- `ins`, `outs`: external incoming/outgoing q-label tuples.
+- `coeff`: exact integer coefficients keyed by intermediate q-label paths.
+- `coeff_nfac`: rational normalization factor for each coefficient block.
+"""
 struct FTree_{S, NI, NO, NZ, M1, M2} <: AbstractCG3contract{S, NI, NO, NZ}
     # Incoming spaces. No need to be sorted
     ins::NTuple{NI, NTuple{NZ, Int}}
@@ -14,11 +29,30 @@ struct FTree_{S, NI, NO, NZ, M1, M2} <: AbstractCG3contract{S, NI, NO, NZ}
     coeff_nfac::Dict{NTuple{M2, NTuple{NZ, Int}}, Rational{BigInt}}
 end
 
+"""Convenience alias for `FTree_` with exactly one outgoing leg. Type parameters encode symmetry, incoming leg count, q-label width, and intermediate-axis ranks."""
 const FTree{S, N, NZ, M1, M2} = FTree_{S, N, 1, NZ, M1, M2}
 
+"""
+    copy(ftree::FTree) -> FTree
+
+Return a shallow copy of an `FTree` coefficient container.
+
+The incoming/outgoing qlabels are reused, while the coefficient dictionaries are
+copied. The coefficient arrays inside those dictionaries are not deep-copied by
+this helper.
+"""
 Base.copy(ftree::FTree{S}) where S<:NonabelianSymm =
     create_FTree(S, ftree.ins, ftree.outs, copy(ftree.coeff), copy(ftree.coeff_nfac), false)
 
+"""
+    create_CG3cont(cont::FTree, new_ins, new_outs, new_coeffs, new_coeff_nfac, sortcheck; verbose=0)
+
+Create a new CG3 contraction container of the same concrete family as `cont`.
+
+For `FTree`, this forwards to `create_FTree`. `new_ins` and `new_outs` are the
+external qlabels, `new_coeffs` and `new_coeff_nfac` are exact coefficient
+storage, and `sortcheck` controls whether OM-list consistency is verified.
+"""
 create_CG3cont(cont::FTree{S, NI},
     new_ins::NTuple{NI, NTuple{NZ, Int}},
     new_outs::NTuple{1, NTuple{NZ, Int}},
@@ -29,6 +63,16 @@ create_CG3cont(cont::FTree{S, NI},
     create_FTree(S, new_ins, new_outs, new_coeffs, new_coeff_nfac, sortcheck)
 
 
+"""
+    create_unit_FTree(omlist::OMList, i::Int) -> FTree
+
+Create the `i`th unit fusion-tree basis vector from an OM list.
+
+`omlist` defines incoming qlabels, output qlabel, intermediate qlabel paths,
+and outer-multiplicity dimensions. `i` is a one-based flattened OM-basis index.
+The resulting `FTree` has exactly one coefficient equal to one in the selected
+intermediate path and zero elsewhere.
+"""
 function create_unit_FTree(omlist::OMList{S, N, NZ},
     i::Int) where {S<:NonabelianSymm, N, NZ}
 
@@ -54,6 +98,16 @@ function create_unit_FTree(omlist::OMList{S, N, NZ},
         (omlist.out_space,), coeff, coeff_nfac, true)
 end
 
+"""
+    create_FTree(::Type{S}, ins, outs, coeff, coeff_nfac, sortcheck; verbose=0)
+
+Construct an exact fusion-tree linear combination.
+
+`ins` and `outs` are external qlabels. `coeff` maps intermediate qlabel paths to
+integer coefficient arrays, and `coeff_nfac` stores a rational normalization
+factor for each path. When `sortcheck=true`, `ins` must be sorted and every key
+and coefficient shape is checked against the cached `OMList`.
+"""
 function create_FTree(::Type{S}, 
     ins::NTuple{N, NTuple{NZ, Int}},
     outs::NTuple{1, NTuple{NZ, Int}},
@@ -93,6 +147,15 @@ function create_FTree(::Type{S},
     return FTree{S, N, NZ, M1, M2}(ins, outs, coeff, coeff_nfac)
 end
 
+"""
+    random_FTree(::Type{S}, ins, outs; onearr=false) -> FTree
+
+Generate a random exact fusion-tree coefficient object for tests.
+
+`ins` must be sorted and `outs` must contain one output qlabel. Coefficient
+arrays are filled with random `Int8` values, or all ones when `onearr=true`.
+The OM-list shape is loaded and validated before construction.
+"""
 # Generate a random linear combination of fusion trees
 # This function is used for testing purposes
 function random_FTree(::Type{S}, 
@@ -116,6 +179,15 @@ function random_FTree(::Type{S},
     return create_FTree(S, ins, outs, coeff, coeff_nfac, true)
 end
 
+"""
+    decompose_perm(perm::Tuple) -> Vector{Tuple{Int,Int}}
+
+Decompose a permutation into adjacent swaps.
+
+`perm` is the desired final ordering of `1:length(perm)`. The returned list
+contains adjacent transpositions `(i, i + 1)` that, applied in order, transform
+the identity ordering into `perm`.
+"""
 # Decompose a permutation into adjacent transpositions
 function decompose_perm(perm::Tuple)
     len = length(perm)
@@ -136,6 +208,16 @@ function decompose_perm(perm::Tuple)
     end
 end
 
+"""
+    permute!(ftree::FTree, perm; verbose=0) -> FTree
+
+Permute incoming legs of a fusion tree by adjacent R/F recoupling moves.
+
+`perm` uses output-position convention over the incoming qlabels. The function
+decomposes it into adjacent swaps and applies `permute_adjacent!` repeatedly.
+The input coefficient dictionaries may be mutated during intermediate R-symbol
+application, and the returned `FTree` represents the permuted fusion basis.
+"""
 # FTree in the argument is modified in place
 # However, the resulting FTree is different from the original one
 function Base.permute!(FTree::FTree{S, N}, perm::NTuple{N, Int};
@@ -157,6 +239,15 @@ function Base.permute!(FTree::FTree{S, N}, perm::NTuple{N, Int};
     return FTree
 end
 
+"""
+    permute_adjacent!(ftree::FTree, i1, i2; verbose=0) -> FTree
+
+Swap adjacent incoming legs `i1` and `i2 == i1 + 1`.
+
+The first-leg swap may require only an R-symbol when the two qlabels match.
+Interior swaps are implemented as R, then F, then R moves, producing a new
+fusion-tree coefficient object with updated incoming qlabel order.
+"""
 function permute_adjacent!(FTree::FTree{S, N}, i1, i2;
     verbose=0) where {S<:NonabelianSymm, N}
     @assert i2 == i1 + 1
@@ -183,6 +274,18 @@ function permute_adjacent!(FTree::FTree{S, N}, i1, i2;
     return FTree_new
 end
 
+"""
+    fsymiofunc_perm_step1(ftree, rem, i) -> (in1, in2, in3, outsp)
+
+Return the four qlabels needed for an F-symbol during FTree permutation.
+
+`ftree` supplies the current incoming and outgoing q-labels. `rem` is the
+intermediate-path tuple with the `i`th intermediate q-label removed. `i` is the
+associativity-move position counted in the canonical right-associated fusion
+tree convention. The returned `(in1, in2, in3, outsp)` describes the local
+recoupling `(in1 ⊗ in2) ⊗ in3 -> outsp` or its inverse, depending on the
+`backward` flag passed to `apply_Fsymbol`.
+"""
 function fsymiofunc_perm_step1(FTree::FTree{S, N}, 
     rem::NTuple{M, NTuple{NZ, Int}}, 
     i) where {S<:NonabelianSymm, N, M, NZ}
@@ -192,6 +295,17 @@ function fsymiofunc_perm_step1(FTree::FTree{S, N},
     return in1, in2, in3, outsp
 end
 
+"""
+    rsymiofunc_perm_step1(ftree, intermsp, i) -> (in1, in2, rout)
+
+Return the qlabels needed for an R-symbol during FTree permutation.
+
+`ftree` supplies visible incoming and outgoing q-labels. `intermsp` is the
+current intermediate q-label path for one coefficient block. `i` is the CG3
+position being braided. The return value `(in1, in2, rout)` identifies the
+local channel `in1 ⊗ in2 -> rout` whose R-symbol acts on the `i`th
+outer-multiplicity axis.
+"""
 # rsym input/output function used in permutation step of step 1
 function rsymiofunc_perm_step1(FTree::FTree{S, NI},
     intermsp::NTuple{M1, NTuple{NZ, Int}},
@@ -204,6 +318,21 @@ function rsymiofunc_perm_step1(FTree::FTree{S, NI},
 end
 
 
+"""
+    apply_Rsymbol!(CG3cont, i::Int, rsymiofunc; verbose=0) -> nothing
+
+Apply an R-symbol to the `i`th CG3 position of an exact contraction container.
+
+`CG3cont` supplies coefficient dictionaries and rational normalization factors.
+`i` selects the coefficient-array axis corresponding to the CG3 being braided.
+`rsymiofunc` is a callback that maps `(CG3cont, intermediate_key, i)` to
+`(in1, in2, rout)`. `verbose` controls diagnostic printing.
+
+Only exchanges with `in1 == in2` need a nontrivial R-symbol in this code path.
+For those blocks, the coefficient array is contracted along axis `i` with the
+right-normalized R-symbol matrix; the integer array and rational factor are then
+reduced with `arr_relprime`. The container's dictionaries are mutated in place.
+"""
 # Apply R-symbol to the i-th CG3 in AbstractCG3contract type
 function apply_Rsymbol!(CG3cont::AbstractCG3contract{S, NI, NO, NZ},
     i::Int,
@@ -235,18 +364,69 @@ function apply_Rsymbol!(CG3cont::AbstractCG3contract{S, NI, NO, NZ},
     end
 end
 
+"""
+    arr_relprime(arr, nfac::Rational) -> (arr_reduced, nfac_reduced)
+
+Remove a common factor shared by an integer array and a rational denominator.
+
+`arr` is an integer coefficient array and `nfac` is the rational scalar
+multiplier such that the exact tensor is `arr * nfac`. The function computes
+the gcd of all entries of `arr`, intersects it with the denominator of `nfac`,
+divides that common factor out of `arr`, and multiplies it into `nfac`.
+
+This keeps exact arrays primitive after R/F-symbol contractions without
+changing the represented rational tensor.
+"""
 function arr_relprime(arr, nfac::Rational)
     cfac = gcd(arr)
     n = gcd(cfac, nfac.den)
     return div.(arr, n), nfac * n
 end
 
+"""
+    check_irange(::Type{<:FTree}, i) -> Assertion
+
+Validate an F-symbol intermediate-index position for an `FTree`.
+
+For an `N`-input fusion tree there are `N - 2` intermediate q-labels, so valid
+F-symbol positions are `1:N-2`. The function asserts this range and returns the
+assertion result.
+"""
 check_irange(::Type{<:FTree{S, N}}, i::Int) where {S<:NonabelianSymm, N} = 
     @assert i >= 1 && i <= N - 2
 
-# Key length, Array dimension of FTree type
+"""
+    get_dict_param(::Type{<:FTree}) -> (key_length, coeff_rank)
+
+Return coefficient dictionary dimensions for an `FTree` type.
+
+`key_length` is the number of intermediate q-labels in each dictionary key:
+`N - 2`. `coeff_rank` is the rank of each outer-multiplicity coefficient array:
+`N - 1`, one axis per CG3 in the fusion tree.
+"""
 get_dict_param(::Type{<:FTree{S, N}}) where {S<:NonabelianSymm, N} = (N - 2, N - 1) 
 
+"""
+    apply_Fsymbol(CG3cont, new_ins, new_outs, i, backward, fsymiofunc; verbose=0, permute_updown=false)
+
+Apply an F-symbol recoupling move to change one intermediate space.
+
+`CG3cont` supplies the old exact coefficient blocks. `new_ins` and `new_outs`
+define the external q-label tuples of the returned container. `i` selects the
+intermediate q-label slot being changed. `backward` chooses whether the cached
+F-symbol maps from `fs_list` to `es_list` or from `es_list` to `fs_list`.
+`fsymiofunc` maps each remaining intermediate path to the local
+`(in1, in2, in3, out)` q-labels. `verbose` controls diagnostics.
+`permute_updown` swaps the two coefficient axes associated with the F-symbol
+slot before and after recoupling; it is used by X-symbol paths where upper and
+lower multiplicity axes are stored in the opposite order.
+
+The method groups coefficient blocks by all intermediate q-labels except slot
+`i`, lifts all participating integer arrays to a common denominator, applies
+the selected normalized F-symbol matrix, splits the result back into
+intermediate-space blocks, removes common integer factors, and returns a new
+container via `create_CG3cont`.
+"""
 # Apply F-symbol to change the ith intermediate space
 # For fusion tree, it is applied to the i-th and (i+1)-th CG3s of the fusion tree
 function apply_Fsymbol(CG3cont::AbstractCG3contract{S, NI, NO, NZ}, 

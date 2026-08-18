@@ -1,3 +1,14 @@
+"""
+F-move (associativity) coefficients between CGT fusion bases.
+
+# Fields
+
+- `in1`, `in2`, `in3`, `out`: four external q-labels defining the move.
+- `es_list`, `fs_list`: canonical intermediate q-label lists on the two fusion trees.
+- `fsym_mat`: dense F-move coefficient matrix.
+- `es_nfactor`, `fs_nfactor`: exact normalization factors for both bases.
+- `size_byte`: cached memory footprint for LRU eviction.
+"""
 struct Fsymbol{S<:NonabelianSymm, CT, NZ}
     in1::NTuple{NZ, Int}
     in2::NTuple{NZ, Int}   
@@ -22,6 +33,20 @@ end
 
 # Obtain the F-symbol by contracting (non-normalized) CGTs 
 # maximal weight state part only
+"""
+    getNsave_Fsymbol(::Type{S}, ::Type{CT}, in1, in2, in3, out; verbose=0) -> Fsymbol
+
+Load or compute the associativity matrix for `(in1 x in2) x in3 -> out`.
+
+`S` selects the non-Abelian symmetry and `CT` the exact scalar type. `in1`,
+`in2`, `in3`, and `out` are qlabels of width `nzops(S)`. On a cache miss, the
+method finds admissible intermediate qlabels for the `e = in1 x in2` and
+`f = in2 x in3` fusion trees, loads the required CG3 blocks, contracts only the
+maximal-weight output parts, applies the product inner-product metric to the
+`e`-tree blocks, fills the dense F-move matrix by overlaps with the `f`-tree
+blocks, stores normalization-factor vectors for both bases, saves the result,
+and returns it.
+"""
 function getNsave_Fsymbol(::Type{S},
     ::Type{CT},
     in1::NTuple{NZ, Int},
@@ -137,6 +162,16 @@ function getNsave_Fsymbol(::Type{S},
     return fsym_struct
 end
 
+"""
+    conjugate!(::Type{S}, es_contract_res, in1, in2, in3)
+
+Apply product inner-product metrics to contracted `e`-tree blocks in place.
+
+`es_contract_res` is a vector of dictionaries whose keys are `(z1, z2, z3)` and
+whose values have axes `(i1, i2, i3, om_outer, om_inner)`. The irreps for
+`in1`, `in2`, and `in3` provide the metric matrices used to conjugate the first
+three axes before F-symbol overlap assembly.
+"""
 function conjugate!(::Type{S}, 
     es_contract_res::Vector{Dict{NTuple{3, NTuple{NZ, Int}}, Array{CT, 5}}}, 
     in1::NTuple{NZ, Int}, 
@@ -160,6 +195,16 @@ function conjugate!(::Type{S},
     end
 end
 
+"""
+    mwpartof(::Type{S}, blks, inNout, di=3)
+
+Extract the maximal-weight slice of one leg from CG3 block dictionaries.
+
+`blks` maps three z-weight labels to rank-4 CG3 arrays. `inNout` gives the
+three qlabels `(in1, in2, out)` and `di` selects which leg's maximal-weight
+sector is required, usually `3` for the outgoing leg. The returned dictionary
+drops that zlabel from the key and drops the corresponding singleton array axis.
+"""
 # di: Dropped index, 3 when getting mw part for outgoing leg
 # inNout: Tuple (in1, in2, out)
 function mwpartof(::Type{S}, 
@@ -182,6 +227,17 @@ function mwpartof(::Type{S},
     return mw_blk
 end
 
+"""
+    contractblks_mw(::Type{S}, blks1, blks2_mw, es; verbose=0)
+
+Contract a CG3 block dictionary with a maximal-weight CG3 block dictionary.
+
+`blks1` is the first fusion step and `blks2_mw` is the second fusion step after
+maximal-weight extraction. If `es=true`, the contraction represents
+`(in1 x in2) x in3`; otherwise it represents `in1 x (in2 x in3)`. Matching
+intermediate z-weights are found by sorted-key traversal, and equal output keys
+are accumulated.
+"""
 # 3rd dimension of blk1 and 1st dimension of blk2_mw are contracted
 function contractblks_mw(::Type{S},
     blks1::Dict{NTuple{3, NTuple{NZ, Int}}, Array{CT}}, 
@@ -248,6 +304,15 @@ function contractblks_mw(::Type{S},
     return contract_res
 end
 
+"""
+    contract_blks(blk1, blk2, es) -> Array
+
+Contract two concrete CG3 coefficient blocks for F-symbol construction.
+
+When `es=true`, `blk1[i1,i2,e,μ]` is contracted with `blk2[e,i3,ν]` and returns
+axes `(i1, i2, i3, ν, μ)`. When `es=false`, `blk1[i2,i3,f,κ]` is contracted
+with `blk2[i1,f,λ]` and returns axes `(i1, i2, i3, λ, κ)`.
+"""
 function contract_blks(blk1::Array{CT, 4}, 
     blk2::Array{CT, 3}, 
     es::Bool) where {CT<:Number}
@@ -260,6 +325,15 @@ function contract_blks(blk1::Array{CT, 4},
     return result
 end
 
+"""
+    find_espaces(::Type{S}, in1, in2, in3, out, ::Type{CT}; verbose=0)
+
+Find admissible intermediate qlabels for one side of an F-symbol.
+
+The function considers `in1 x in2 -> e` and `e x in3 -> out`. For every
+admissible `e`, it returns `(e, (qin3_om, in12_om))`, where the tuple contains
+the outer multiplicity of `e x in3 -> out` and `in1 x in2 -> e`.
+"""
 # return type: a dictionary
 # Its keys are the qlabels, and its values are tuples of multiplicities
 # values are (a, b), where a is the multiplicity in in1 ⊗ in2 -> e
@@ -288,6 +362,15 @@ function find_espaces(::Type{S},
     return es
 end
 
+"""
+    fsym_leftnormalized(fsym::Fsymbol) -> (Matrix{BigInt}, Integer)
+
+Return the left-normalized integer form of an F-symbol matrix.
+
+The stored dense matrix is multiplied on the left by
+`Diagonal(fsym.es_nfactor)`. A common denominator `nfac` is extracted so exact
+recoupling code can use an integer matrix plus a separate normalization factor.
+"""
 function fsym_leftnormalized(fsym::Fsymbol{S, CT, NZ}) where {S<:NonabelianSymm, CT<:Number, NZ}
     @assert nzops(S) == NZ
     mat_rational = Diagonal(fsym.es_nfactor) * fsym.fsym_mat
@@ -295,6 +378,15 @@ function fsym_leftnormalized(fsym::Fsymbol{S, CT, NZ}) where {S<:NonabelianSymm,
     return Matrix{BigInt}(mat_rational * nfac), nfac
 end
 
+"""
+    fsym_rightnormalized(fsym::Fsymbol) -> (Matrix{BigInt}, Integer)
+
+Return the right-normalized integer form of an F-symbol matrix.
+
+The stored dense matrix is multiplied on the right by
+`Diagonal(fsym.fs_nfactor)`, then denominators are cleared into the returned
+normalization factor `nfac`.
+"""
 function fsym_rightnormalized(fsym::Fsymbol{S, CT, NZ}) where {S<:NonabelianSymm, CT<:Number, NZ}
     @assert nzops(S) == NZ
     mat_rational = fsym.fsym_mat * Diagonal(fsym.fs_nfactor)
@@ -302,4 +394,9 @@ function fsym_rightnormalized(fsym::Fsymbol{S, CT, NZ}) where {S<:NonabelianSymm
     return Matrix{BigInt}(mat_rational * nfac), nfac
 end
 
+"""
+    size(fsym::Fsymbol) -> Int
+
+Return the dimension of the square F-symbol matrix.
+"""
 Base.size(fsym::Fsymbol{S, CT, NZ}) where {S<:NonabelianSymm, CT, NZ} = size(fsym.fsym_mat)[1]

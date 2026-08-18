@@ -156,7 +156,7 @@ function get_random_sameq_CGTSVD_input(::Type{S},
         qrep = Tuple(rand(0:qlimit) for _ in 1:NZ)
         qrep == zeroq && continue
 
-        rep_dim = LurCGT.dimension(getNsave_irep(S, BigInt, qrep))
+        rep_dim = LurCGT.dimension(LurCGT.getNsave_irep(S, BigInt, qrep))
         nlegs_max = 0
         total_dim = 1
         while nlegs_max < 8 && total_dim * rep_dim <= dim_limit
@@ -208,7 +208,7 @@ function get_CGTSVD_split_basis_direct(::Type{S},
     left_up, left_dn, right_up, right_dn = LurCGT.get_split_side_spaces(S, upsp, dnsp, leftlegs)
 
     cgtom = get_CGTom(S, upsp, dnsp)
-    canbasis = get_canonical_basis(S, upsp, dnsp, cgtom; verbose)
+    canbasis = LurCGT.get_canonical_basis(S, upsp, dnsp, cgtom; verbose)
     basis_shape = size(canbasis[1])
     splitbasis = Array{Float64, U + D}[]
 
@@ -251,18 +251,18 @@ function get_CGTSVD_split_basis_direct(::Type{S},
         @assert left_om.totalOM == omL
         @assert right_om.totalOM == omR
 
-        center_basis = get_canonical_basis(S, center_up_s, center_dn_s, center_om; verbose)
+        center_basis = LurCGT.get_canonical_basis(S, center_up_s, center_dn_s, center_om; verbose)
         #println("center: $(center_up_s)->$(center_dn_s), om=$(center_om.totalOM)")
-        left_basis = get_canonical_basis(S, left_up_s, left_dn_q_s, left_om; verbose)
+        left_basis = LurCGT.get_canonical_basis(S, left_up_s, left_dn_q_s, left_om; verbose)
         #println("left: $(left_up_s)->$(left_dn_q_s), om=$(left_om.totalOM)")
-        right_basis = get_canonical_basis(S, right_up_s, right_dn_dualq_s, right_om; verbose)
+        right_basis = LurCGT.get_canonical_basis(S, right_up_s, right_dn_dualq_s, right_om; verbose)
         #println("right: $(right_up_s)->$(right_dn_dualq_s), om=$(right_om.totalOM)")
-        dimq = Float64(LurCGT.dimension(getNsave_irep(S, BigInt, q)))
+        dimq = Float64(LurCGT.dimension(LurCGT.getNsave_irep(S, BigInt, q)))
 
         for b in 1:omR
             for a in 1:omL
                 #println("contracted legs: center leg $(center_ctlegs_s[1]), left leg $(left_ctlegs_s[1])")
-                arr12_cont = contract_arrs(center_basis[1], left_basis[a], center_ctlegs_s, left_ctlegs_s)
+                arr12_cont = LurCGT.contract_arrs(center_basis[1], left_basis[a], center_ctlegs_s, left_ctlegs_s)
                 interm_up_chk, interm_dn_chk, _, arr12_cont = get_final_CGTinfo_stable(
                     S, center_up_s, center_dn_s, left_up_s, left_dn_q_s,
                     center_ctlegs_s, left_ctlegs_s, arr12_cont)
@@ -270,7 +270,7 @@ function get_CGTSVD_split_basis_direct(::Type{S},
                 @assert interm_dn_chk == interm_dn_s
 
                 #println("contracted legs: interm leg $(interm_ctlegs_s[1]), right leg $(right_ctlegs_s[1])")
-                arr123_cont = contract_arrs(arr12_cont, right_basis[b], interm_ctlegs_s, right_ctlegs_s)
+                arr123_cont = LurCGT.contract_arrs(arr12_cont, right_basis[b], interm_ctlegs_s, right_ctlegs_s)
                 final_up, final_dn, _, arr123_cont = get_final_CGTinfo_stable(
                     S, interm_up_s, interm_dn_s, right_up_s, right_dn_dualq_s,
                     interm_ctlegs_s, right_ctlegs_s, arr123_cont)
@@ -323,7 +323,7 @@ function check_CGTSVD_basischange_case(::Type{S},
     obj = getNsave_CGTSVD(S, upsp, dnsp, leftlegs; save=false, verbose)
     cgtom = get_CGTom(S, upsp, dnsp)
     om = cgtom.totalOM
-    canbasis = get_canonical_basis(S, upsp, dnsp, cgtom; verbose)
+    canbasis = LurCGT.get_canonical_basis(S, upsp, dnsp, cgtom; verbose)
     splitbasis = get_CGTSVD_split_basis_direct(S, upsp, dnsp, leftlegs; verbose)
 
     canbasis_dense = [dense_copy(canbasis[j]) for j in 1:om]
@@ -397,4 +397,3 @@ function getRandomCGT(::Type{S},
 
     return cgt_in, cgt_out
 end
-

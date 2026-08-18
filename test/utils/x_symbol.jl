@@ -35,21 +35,21 @@ function test_Xsymbol_randinput(::Type{S},
         CGT2up = LurCGT.random_FTree(S, Tuple(cgt2_outsp), (cgt2_internalsp,))
         CGT2down = LurCGT.random_FTree(S, Tuple(cgt2_insp), (cgt2_internalsp,))
 
-        CGT1up_arr = FTree2arr(CGT1up, FT, false)
-        CGT1down_arr = FTree2arr(CGT1down, FT, false)
-        CGT2up_arr = FTree2arr(CGT2up, FT, false)
-        CGT2down_arr = FTree2arr(CGT2down, FT, false)
+        CGT1up_arr = LurCGT.FTree2arr(CGT1up, FT, false)
+        CGT1down_arr = LurCGT.FTree2arr(CGT1down, FT, false)
+        CGT2up_arr = LurCGT.FTree2arr(CGT2up, FT, false)
+        CGT2down_arr = LurCGT.FTree2arr(CGT2down, FT, false)
 
         # Written in old convention except this part
         #println("CGT1: $(cgt1_outsp)->$(cgt1_internalsp)->$(cgt1_insp)")
         #println("CGT2: $(cgt2_outsp)->$(cgt2_internalsp)->$(cgt2_insp)")
         #println("contracted legs: $(cgt1legs) of CGT1, $(cgt2legs) of CGT2")
 
-        CGT1 = contract_arrs(CGT1up_arr, CGT1down_arr, 
+        CGT1 = LurCGT.contract_arrs(CGT1up_arr, CGT1down_arr,
                              (length(cgt1_outsp)+1,), (length(cgt1_insp)+1,))
-        CGT2 = contract_arrs(CGT2up_arr, CGT2down_arr, 
+        CGT2 = LurCGT.contract_arrs(CGT2up_arr, CGT2down_arr,
                              (length(cgt2_outsp)+1,), (length(cgt2_insp)+1,))
-        arr1 = contract_arrs(CGT1, CGT2, Tuple(cgt1legs), Tuple(cgt2legs))
+        arr1 = LurCGT.contract_arrs(CGT1, CGT2, Tuple(cgt1legs), Tuple(cgt2legs))
 
         # permute the contraction result
         nout1, nin1 = length(cgt1_outsp), length(cgt1_insp)
@@ -124,11 +124,11 @@ function contract(step2_result::LurCGT.Step2_result{S, NI, NO, NZ, M},
     verbose=0) where {S<:NonabelianSymm, NI, NO, NZ, M, FT<:AbstractFloat}
     szs = Int[]
     for insp in step2_result.ins
-        irep = getNsave_irep(S, BigInt, insp)
+        irep = LurCGT.getNsave_irep(S, BigInt, insp)
         push!(szs, LurCGT.dimension(irep))
     end
     for outsp in step2_result.outs
-        irep = getNsave_irep(S, BigInt, outsp)
+        irep = LurCGT.getNsave_irep(S, BigInt, outsp)
         push!(szs, LurCGT.dimension(irep))
     end
     arr = SparseArray(zeros(FT, szs...))
@@ -141,16 +141,16 @@ function contract(step2_result::LurCGT.Step2_result{S, NI, NO, NZ, M},
     elseif NO == 1
         @assert NI >= 2
         for intsps in keys(step2_result.coeff)
-            cont_res = contract_CG3s(S, collect(step2_result.ins), step2_result.outs[1], intsps, Val(NI), FT)
+            cont_res = LurCGT.contract_CG3s(S, collect(step2_result.ins), step2_result.outs[1], intsps, Val(NI), FT)
             om_arr = SparseArray{FT}(step2_result.coeff[intsps] * step2_result.coeff_nfac[intsps])
-            arr += contract_om(cont_res, om_arr, Val(NI))
+            arr += LurCGT.contract_om(cont_res, om_arr, Val(NI))
         end
     elseif NI == 1
         @assert NO >= 2
         for intsps in keys(step2_result.coeff)
-            cont_res = contract_CG3s(S, collect(step2_result.outs), step2_result.ins[1], intsps, Val(NO), FT)
+            cont_res = LurCGT.contract_CG3s(S, collect(step2_result.outs), step2_result.ins[1], intsps, Val(NO), FT)
             om_arr = SparseArray{FT}(step2_result.coeff[intsps] * step2_result.coeff_nfac[intsps])
-            contracted = contract_om(cont_res, om_arr, Val(NO))
+            contracted = LurCGT.contract_om(cont_res, om_arr, Val(NO))
             arr += permutedims(contracted, (NO+1, collect(1:NO)...))
         end
     else # Both NI and NO are greater than 1
@@ -158,8 +158,8 @@ function contract(step2_result::LurCGT.Step2_result{S, NI, NO, NZ, M},
         for (i, intsps) in enumerate(keys(step2_result.coeff))
             if verbose > 1 println("$(i)/$(length(keys(step2_result.coeff)))") end
             center_sp = intsps[NI-1]
-            cont_res_up = contract_CG3s(S, collect(step2_result.ins), center_sp, intsps[1:NI-2], Val(NI), FT)
-            cont_res_dn = contract_CG3s(S, collect(step2_result.outs), center_sp, intsps[NI:end], Val(NO), FT)
+            cont_res_up = LurCGT.contract_CG3s(S, collect(step2_result.ins), center_sp, intsps[1:NI-2], Val(NI), FT)
+            cont_res_dn = LurCGT.contract_CG3s(S, collect(step2_result.outs), center_sp, intsps[NI:end], Val(NO), FT)
             om_arr = SparseArray{FT}(step2_result.coeff[intsps] * step2_result.coeff_nfac[intsps])
             newentry = contract_om_step3(cont_res_up, cont_res_dn, om_arr, Val(NI), Val(NO))
             arr += newentry
@@ -308,8 +308,8 @@ function test_Xsym(::Type{S},
         CGTom2 = get_CGTom(S, cgt2_insp_, cgt2_outsp_)
 
         om1, om2 = CGTom1.totalOM, CGTom2.totalOM
-        canbasis1 = get_canonical_basis(S, cgt1_insp, cgt1_outsp, CGTom1; verbose)
-        canbasis2 = get_canonical_basis(S, cgt2_insp, cgt2_outsp, CGTom2; verbose)
+        canbasis1 = LurCGT.get_canonical_basis(S, cgt1_insp, cgt1_outsp, CGTom1; verbose)
+        canbasis2 = LurCGT.get_canonical_basis(S, cgt2_insp, cgt2_outsp, CGTom2; verbose)
         @assert !isempty(canbasis1) && !isempty(canbasis2)
         coeff1, coeff2 = rand(Float64, om1), rand(Float64, om2)
 
@@ -319,7 +319,7 @@ function test_Xsym(::Type{S},
         for i in 1:om2 arr2 += coeff2[i] * canbasis2[i] end
 
         # Contract arr1 and arr2
-        arr3_cont = contract_arrs(arr1, arr2, cgt1legs, cgt2legs)
+        arr3_cont = LurCGT.contract_arrs(arr1, arr2, cgt1legs, cgt2legs)
         
         Xsym = getNsave_Xsymbol(S, cgt1_insp, cgt1_outsp,
         cgt2_insp, cgt2_outsp, cgt1legs, cgt2legs; verbose, save=true)
@@ -336,7 +336,7 @@ function test_Xsym(::Type{S},
         cgt3_insp, cgt3_outsp, CGTom3, arr3_cont = get_final_CGTinfo(S, 
         cgt1_insp, cgt1_outsp, cgt2_insp, cgt2_outsp, cgt1legs, cgt2legs, arr3_cont)
 
-        canbasis3 = get_canonical_basis(S, Tuple(cgt3_insp), Tuple(cgt3_outsp), CGTom3)
+        canbasis3 = LurCGT.get_canonical_basis(S, Tuple(cgt3_insp), Tuple(cgt3_outsp), CGTom3)
         om3 = CGTom3.totalOM
         @tensor coeff3[i3] := coeff1[i1] * coeff2[i2] * Xsym.xsym_arr[i1, i2, i3]
         arr3_Xsym = SparseArray(zeros(Float64, size(canbasis3[1])))
@@ -353,4 +353,3 @@ function test_Xsym(::Type{S},
         end
     end
 end
-

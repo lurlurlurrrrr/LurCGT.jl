@@ -16,7 +16,7 @@ function test_CGTperm(::Type{S},
         while true
             nrepeat = rand(2:4)
             qrep = Tuple(rand(0:qlimit) for i in 1:NZ)
-            rep_dim = LurCGT.dimension(getNsave_irep(S, BigInt, qrep))
+            rep_dim = LurCGT.dimension(LurCGT.getNsave_irep(S, BigInt, qrep))
 
             rem_dim = div(dim_limit, rep_dim^nrepeat)
             if rem_dim < 100 continue end
@@ -65,7 +65,7 @@ function test_CGTperm(::Type{S},
         perm_other = collect(1:(repeat_in ? NO : NI))
 
         total_perm = repeat_in ? (perm_repeat..., (perm_other .+ NI)...) : (perm_other..., (perm_repeat .+ NI)...)
-        canbasis = get_canonical_basis(S, cgt_insp, cgt_outsp, CGTom; verbose)
+        canbasis = LurCGT.get_canonical_basis(S, cgt_insp, cgt_outsp, CGTom; verbose)
         @assert !isempty(canbasis); om = CGTom.totalOM
 
         coeff_before = rand(Float64, om)
@@ -121,8 +121,8 @@ function test_CGT_conj(::Type{S},
         CGTom_conj = get_CGTom(S, cgt_out, cgt_in)
         @assert CGTom_conj.totalOM == om
 
-        canbasis = get_canonical_basis(S, cgt_in, cgt_out, CGTom; verbose)
-        canbasis_conj = get_canonical_basis(S, cgt_out, cgt_in, CGTom_conj; verbose)
+        canbasis = LurCGT.get_canonical_basis(S, cgt_in, cgt_out, CGTom; verbose)
+        canbasis_conj = LurCGT.get_canonical_basis(S, cgt_out, cgt_in, CGTom_conj; verbose)
 
         perm = (NI+1:NI+NO..., 1:NI...)
         for j in 1:om
@@ -149,7 +149,7 @@ function test_CGT_conj_sameq(::Type{S},
         CGTom = get_CGTom(S, sps, sps)
         om = CGTom.totalOM
 
-        canbasis = get_canonical_basis(S, sps, sps, CGTom; verbose)
+        canbasis = LurCGT.get_canonical_basis(S, sps, sps, CGTom; verbose)
         perm_CGT = (N+1:2N..., 1:N...)
         perm_om = LurCGT.get_conj_perm(CGTom)
 
@@ -160,4 +160,3 @@ function test_CGT_conj_sameq(::Type{S},
         println("test passed")
     end
 end
-

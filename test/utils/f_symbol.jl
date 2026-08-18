@@ -8,7 +8,7 @@ function Fsymbol_toreal(::Type{S},
     in2::NTuple{NZ, Int}, 
     in3::NTuple{NZ, Int}, 
     out::NTuple{NZ, Int}) where {S<:NonabelianSymm, CT<:Number, FT<:Number, NZ}
-    fsym = getNsave_Fsymbol(S, CT, in1, in2, in3, out)
+    fsym = LurCGT.getNsave_Fsymbol(S, CT, in1, in2, in3, out)
 
     mat = fsym.fsym_mat
     sz = size(mat)[1]
@@ -54,9 +54,9 @@ function Fsymbol_fullarr(::Type{S},
     # Fill in the es_contract_res
     for (e, _) in es_list
         # Load CG3 in1 ⊗ in2 -> e 
-        μblk, _, _ = load_cg3_float(S, BigInt, (in1, in2, e))
+        μblk, _, _ = LurCGT.load_cg3_float(S, BigInt, (in1, in2, e))
         # Load CG3 e ⊗ in3 -> out
-        νblk, _, _ = load_cg3_float(S, BigInt, (e, in3, out))
+        νblk, _, _ = LurCGT.load_cg3_float(S, BigInt, (e, in3, out))
 
         @tensor blk_contract[in1, in2, in3, out, ν, μ] := 
             μblk[in1, in2, e, μ] * νblk[e, in3, out, ν]
@@ -67,9 +67,9 @@ function Fsymbol_fullarr(::Type{S},
     fs_contract_res = Array{Float64, 6}[]
     for (f, _) in fs_list
         # Load CG3 in2 ⊗ in3 -> f
-        κblk, _, _ = load_cg3_float(S, BigInt, (in2, in3, f))
+        κblk, _, _ = LurCGT.load_cg3_float(S, BigInt, (in2, in3, f))
         # Load CG3 f ⊗ in1 -> out
-        λblk, _, _ = load_cg3_float(S, BigInt, (f, in1, out))
+        λblk, _, _ = LurCGT.load_cg3_float(S, BigInt, (f, in1, out))
 
         @tensor blk_contract[in1, in2, in3, out, λ, κ] := 
             κblk[in2, in3, f, κ] * λblk[f, in1, out, λ]
@@ -126,12 +126,11 @@ end
 
 function get_random_Fsymbol(::Type{S}, ::Type{FT}, qlimit=4) where {S<:NonabelianSymm, FT<:Integer}
     ins, out = generate_incom_3spaces(S, qlimit)
-    return ins, out, getNsave_Fsymbol(S, BigInt, ins[1], ins[2], ins[3], out)
+    return ins, out, LurCGT.getNsave_Fsymbol(S, BigInt, ins[1], ins[2], ins[3], out)
 end
 
 function get_random_Fsymbol_real(::Type{S}, ::Type{FT}, qlimit=4) where {S<:NonabelianSymm, FT<:AbstractFloat}
     ins, out = generate_incom_3spaces(S, qlimit)
     return ins, out, Fsymbol_toreal(S, BigInt, BigFloat, ins[1], ins[2], ins[3], out)
 end
-
 

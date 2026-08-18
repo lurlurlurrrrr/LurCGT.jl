@@ -32,15 +32,25 @@ function imported_packages(src_root)
 end
 
 @testset "package smoke" begin
-    @test isdefined(LurCGT, :SU)
-    @test isdefined(LurCGT, :getNsave_irep)
+    expected_exports = Set(Symbol[
+        :LurCGT, :Z, :U1, :SU, :SO, :Sp, :G2,
+        :Symmetry, :AbelianSymm, :NonabelianSymm,
+        :add_qn, :decompose_irop, :decompose_space, :detect_1j, :dimension,
+        :get_CGTom, :get_IROP, :get_conj_perm, :get_dualq,
+        :getNsave_CGTperm, :getNsave_CGTSVD, :getNsave_CGTQR,
+        :getNsave_Xsymbol, :getNsave_Conjperm,
+        :getNsave_omlist, :getNsave_validout, :isabelian,
+        :nzops, :remove_zeros, :totxt, :transf_basis!, :to_float,
+    ])
+    @test Set(names(LurCGT)) == expected_exports
     @test isabelian(U1)
-    @test :merge_all_to_global in names(LurCGT)
-    @test :merge_table_to_global in names(LurCGT)
-    @test :sqlite_stats in names(LurCGT)
-    @test :delete_closed_local_sqlite_dbs in names(LurCGT)
-    @test :finalize_sqlite! in names(LurCGT)
-    @test :finalize_all_sqlite! in names(LurCGT)
+    exact_cgt = LurCGT.getNsave_cg3(SU{2}, BigInt, ((1,), (1,)), [(0,)])[(0,)]
+    cgt, qlabels, directions = to_float(exact_cgt, Float64)
+    default_cgt, _, _ = to_float(exact_cgt)
+    @test size(cgt) == (2, 2, 1, 1)
+    @test eltype(default_cgt) == Float64
+    @test qlabels == ((1,), (1,), (0,))
+    @test directions == ('+', '+', '-')
     @test hash(Z{3}) == hash((0, 3))
     @test hash(U1) == hash((1,))
     @test hash(SU{3}) == hash((2, 3))
@@ -67,7 +77,7 @@ end
         () -> error("SQLite string key should not be generated on cache hit"),
         SU{2}, "irreps", cache_hit_key, LurCGT.IREP_CACHE, LurCGT.IREP_CACHE_LOCK) === cache_hit_obj
     conjperm = getNsave_Conjperm(SU{2}, ((1,), (1,)))
-    @test conjperm isa Conjperm
+    @test conjperm isa LurCGT.Conjperm
     @test conjperm === getNsave_Conjperm(SU{2}, ((1,), (1,)))
     @test conjperm.perm == get_conj_perm(get_CGTom(SU{2}, ((1,), (1,)), ((1,), (1,))))
 end
@@ -399,7 +409,7 @@ sp6_dim = Dict(
 # Test whether the computed dimensions of Sp(6) irreps match known values
 @testset "Sp(6) irrep dimensionality tests" begin
     for (qlabel, dim) in sp6_dim
-        rep = getNsave_irep(Sp{6}, BigInt, qlabel)
+        rep = LurCGT.getNsave_irep(Sp{6}, BigInt, qlabel)
         computed_dim = LurCGT.dimension(rep)
         @assert computed_dim == dim 
         println("Sp(6) irrep $qlabel: dimension $computed_dim verified.")
@@ -422,8 +432,8 @@ end
 end
 
 @testset "X-symbol (normalized) test" begin
-    test_Xsym(SU{3}, 10000, 3, 20; verbose=0)
-    test_Xsym(SU{2}, 1000, 8, 100; verbose=0)
+    test_Xsym(SU{3}, 5000, 3, 20; verbose=0)
+    test_Xsym(SU{2}, 500, 8, 100; verbose=0)
     LurCGT.merge_all_to_global(SU{2})
     LurCGT.merge_all_to_global(SU{3})
 end

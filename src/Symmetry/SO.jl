@@ -1,5 +1,14 @@
 # For SO(N), the symmetries are greatly different for even and odd N
 # Start from odd N first
+"""
+    isvalidsymm(::Type{SO{N}}) -> Bool
+
+Return whether `SO{N}` is supported by this implementation.
+
+`N` is the defining dimension. The code supports `SO{N}` for `N >= 4`; both
+odd and even cases are handled, but several qlabel and tableau conventions
+depend on the parity of `N`.
+"""
 isvalidsymm(::Type{SO{N}}) where N = 4 <= N
 
 isSON(::Type{<:SO}) = true
@@ -22,8 +31,26 @@ maxalt(::Type{SO{N}}) where N = div(N, 2)
 getsl_triv(::Type{SO{N}}, ::Type{RT}) where {N, RT<:Number} =
 Tuple(Dict{NTuple{div(N, 2), Int}, SparseMatrixCSC{RT}}() for _=1:div(N, 2))
 
+"""
+    getsz_triv(::Type{SO{N}}) -> Dict
+
+Return the trivial SO(N) weight-sector dictionary.
+
+The only sector is the all-zero tuple of length `div(N, 2)`, and its basis
+index range is `(1, 1)`.
+"""
 getsz_triv(::Type{SO{N}}) where N = Dict(Tuple(0 for _=1:div(N, 2))=>(1, 1))
 
+"""
+    getsl_def(::Type{SO{N}}, ::Type{RT}) -> NTuple{div(N,2), Dict}
+
+Build sparse lowering-operator blocks for the defining SO(N) representation.
+
+`RT` is the scalar type of the sparse matrices. The returned tuple has one
+dictionary per simple lowering operator. Odd and even `N` differ on the last
+simple root, so the source z-weight sectors are chosen with the parity-aware
+SO(N) convention.
+"""
 function getsl_def(::Type{SO{N}}, ::Type{RT}) where {N, RT<:Number} 
     NZ = div(N, 2); Nodd = (N % 2 == 1)
     def_sl = Tuple(Dict{NTuple{div(N, 2), Int}, SparseMatrixCSC{RT}}() for _=1:div(N, 2))
@@ -39,6 +66,15 @@ function getsl_def(::Type{SO{N}}, ::Type{RT}) where {N, RT<:Number}
     return def_sl
 end
 
+"""
+    getsz_def_vec_(::Type{SO{N}}) -> Vector{NTuple{div(N,2), Int}}
+
+Return defining-representation weights in the internal doubled convention.
+
+SO(N) spin representations require half-integral weights. This code stores all
+SO(N) z-weights multiplied by two, so defining-vector weights are `+/-2` on one
+coordinate, with an additional zero weight for odd `N`.
+"""
 # We need to consider spin representation, so weights are multiplied by 2
 function getsz_def_vec_(::Type{SO{N}}) where N 
     szs = Vector{NTuple{div(N, 2), Int}}()
@@ -58,6 +94,15 @@ getsz_def_vec(::Type{SO{N}}) where N = [collect(t) for t in getsz_def_vec_(SO{N}
 getsz_def(::Type{SO{N}}) where N = Dict(w => (i, i) for (i, w) in enumerate(getsz_def_vec_(SO{N})))
 
 
+"""
+    getdz(::Type{SO{N}}, lop::Int) -> NTuple{div(N,2), Int}
+
+Return the z-weight change produced by SO(N) lowering operator `lop`.
+
+`lop` is a simple-root index. For even SO(N), the last lowering operator uses a
+different pair of defining weights than the previous simple roots; this helper
+encodes that parity-specific convention.
+"""
 function getdz(::Type{SO{N}}, lop::Int) where N
     NZ = div(N, 2); Nodd = (N % 2 == 1)
     sz_lst = getsz_def_vec_(SO{N})
@@ -65,6 +110,15 @@ function getdz(::Type{SO{N}}, lop::Int) where N
     return sz_lst[lop-1] .- sz_lst[lop+1]
 end
 
+"""
+    crystal_chars_map(::Type{SO{N}}) -> Dict{Int, Int}
+
+Map SO(N) tableau characters to defining-representation basis positions.
+
+Positive characters represent the first half of the vector weights, negative
+characters represent the dual half, and odd SO(N) includes the extra zero
+character.
+"""
 function crystal_chars_map(::Type{SO{N}}) where N
     charmap = Dict{Int, Int}(); 
     NZ = div(N, 2); Nodd = N % 2
@@ -74,6 +128,15 @@ function crystal_chars_map(::Type{SO{N}}) where N
     return charmap
 end
 
+"""
+    mw_column(::Type{<:SO{N}}, l::Int, aux::Bool) -> Vector{Int}
+
+Return a maximal-weight tableau column for SO(N).
+
+`l` is the column height. `aux` selects the alternate final column needed for
+even SO(N) spinor-related conventions; when it applies, the top character is
+negated to distinguish the auxiliary column.
+"""
 # This function should be modified
 function mw_column(::Type{<:SO{N}}, l::Int, aux::Bool) where N
     col = collect(l:-1:1)
@@ -84,12 +147,29 @@ end
 
 getdzs(::Type{SO{N}}) where N = [collect(getdz(SO{N}, i)) for i=1:nlops(SO{N})]
 
+"""
+    charlist(::Type{SO{N}}) -> Vector{Int}
+
+Return the ordered SO(N) tableau character alphabet.
+
+The list contains positive characters followed by negative characters. Odd
+SO(N) appends `0` for the middle defining-vector weight.
+"""
 function charlist(::Type{SO{N}}) where N
     lst = vcat(collect(1:div(N, 2)), collect(-div(N, 2):-1))
     if N % 2 == 1 push!(lst, 0) end
     return lst
 end
 
+"""
+    get_fops_std(::Type{SO{N}}) -> Vector{Dict{Int, Int}}
+
+Return standard crystal lowering maps for SO(N) tableau characters.
+
+Each dictionary describes one simple lowering operator. The last dictionary is
+parity dependent: odd SO(N) lowers through the zero character, while even SO(N)
+uses the two terminal vector characters.
+"""
 # f-operations defined for crystal of Tableau
 function get_fops_std(::Type{SO{N}}) where N
     fops = Vector{Dict{Int, Int}}()
@@ -106,6 +186,15 @@ function get_fops_std(::Type{SO{N}}) where N
     return fops
 end
 
+"""
+    qlab2mwz(::Type{SO{N}}, qlabel::NTuple{div(N,2), Int}) -> NTuple{div(N,2), Int}
+
+Convert an SO(N) qlabel to maximal-weight z-coordinates.
+
+`qlabel` uses the package's Dynkin-label convention. Odd and even SO(N) use
+different formulas for the final coordinates, reflecting the different last
+simple root and spinor-label structure.
+"""
 function qlab2mwz(::Type{SO{N}}, qlabel::NTuple{NZ, Int}) where {N, NZ}
     @assert div(N, 2) == NZ
     if N % 2 == 1
@@ -119,6 +208,15 @@ function qlab2mwz(::Type{SO{N}}, qlabel::NTuple{NZ, Int}) where {N, NZ}
     return Tuple(z)
 end
 
+"""
+    getqlabel(::Type{SO{N}}, z::NTuple{div(N,2), Int}) -> NTuple{div(N,2), Int}
+
+Convert maximal-weight z-coordinates back to an SO(N) qlabel.
+
+`z` is expected to use the doubled-weight convention. Assertions check tuple
+length and divisibility before `determine_last` reconstructs the parity-specific
+final Dynkin labels.
+"""
 function getqlabel(::Type{SO{N}}, z::NTuple{NZ, Int}) where {N, NZ}
     Nodd = (N % 2 == 1)
     @assert NZ == nzops(SO{N})
@@ -132,6 +230,14 @@ function getqlabel(::Type{SO{N}}, z::NTuple{NZ, Int}) where {N, NZ}
     return Tuple(qlabel)
 end
 
+"""
+    determine_last(::Type{SO{N}}, z1::Int, z2::Int) -> Vector{Int}
+
+Recover the final SO(N) qlabel coordinates from the first two z-coordinates.
+
+`z1` and `z2` are doubled z-weight coordinates. Odd SO(N) returns the terminal
+vector/spin coordinate pair; even SO(N) returns the two spinor-end coordinates.
+"""
 function determine_last(::Type{SO{N}}, z1::Int, z2::Int) where N
     Nodd = (N % 2 == 1)
     if Nodd
@@ -145,6 +251,15 @@ function determine_last(::Type{SO{N}}, z1::Int, z2::Int) where N
     return [a, b]
 end
 
+"""
+    preprocess(::Type{SO{N}}, qlabel::Vector{Int}) -> Vector{Int}
+
+Normalize an SO(N) qlabel before tableau construction.
+
+`qlabel` is copied and transformed into the column-count convention used by the
+crystal code. Odd SO(N) halves the final doubled spin coordinate. Even SO(N)
+rewrites the last two coordinates into ordered spinor-column counts.
+"""
 function preprocess(::Type{SO{N}}, qlabel::Vector{Int}) where N
     Nodd = (N % 2 == 1); NZ = div(N, 2)
     @assert length(qlabel) == NZ
@@ -161,6 +276,14 @@ end
 get_auxarg(::Type{SO{N}}, qlabel::NTuple{NZ, Int}) where {N, NZ} = 
     N % 2 == 0 && qlabel[NZ-1] < qlabel[NZ]
 
+"""
+    less_weight(::Type{SO{N}}, w1::NTuple{div(N,2), Int}, w2::NTuple{div(N,2), Int}) -> Bool
+
+Order SO(N) weight tuples for deterministic sector traversal.
+
+`w1` and `w2` are compared lexicographically after reversing coordinate order,
+matching the package's tableau-shape convention.
+"""
 # Weight comparision, inputs are a form of shape of the Young tableau
 function less_weight(::Type{SO{N}}, w1::NTuple{NZ, Int}, w2::NTuple{NZ, Int}) where {N, NZ}
 	@assert NZ == div(N, 2)
