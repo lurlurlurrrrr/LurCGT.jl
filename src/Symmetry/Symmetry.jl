@@ -1,19 +1,19 @@
 """Abstract supertype for LurCGT symmetry-family types. Use the concrete family type, not an instance, as API arguments."""
 abstract type Symmetry end
-"""Abstract subtype for Abelian symmetry families. Their sectors have trivial Clebsch-Gordan w-matrices and one q-label component."""
+"""Abstract subtype for Abelian symmetry families. Their sectors have trivial Clebsch-Gordan coefficients and one q-label component."""
 abstract type AbelianSymm <: Symmetry end
-"""Abstract subtype for non-Abelian symmetry families, whose CGT sectors carry nontrivial w-matrices and Dynkin-style q-labels."""
+"""Abstract subtype for non-Abelian symmetry families, whose Clebsch-Gordan coefficients may be nontrivial and whose q-labels use Dynkin-style conventions."""
 abstract type NonabelianSymm <: Symmetry end
 
 """`Z{N}` is the cyclic Abelian group of order `N`; `N` is a positive type parameter and q-label arithmetic is modulo `N`."""
 abstract type Z{N} <: AbelianSymm end
-"""`U1` is the one-dimensional continuous Abelian symmetry family; q-labels are one-element integer tuples representing additive charge."""
+"""`U1` is the Abelian charge-symmetry family; q-labels are one-element integer tuples representing unbounded additive charge."""
 abstract type U1 <: AbelianSymm end
-"""`SU{N}` is the special-unitary non-Abelian family of rank `N - 1`; `N` selects the defining representation dimension."""
+"""``\\mathrm{SU}(N)`` is the special-unitary non-Abelian family of rank `N - 1`; its Julia type parameter `N` selects the defining representation dimension."""
 abstract type SU{N} <: NonabelianSymm end
-"""`Sp{N}` is the compact symplectic non-Abelian family; `N` is its type parameter and q-labels use LurCGT's Dynkin convention."""
+"""``\\mathrm{Sp}(N)`` is the compact symplectic non-Abelian family; its Julia type parameter `N` and q-labels use LurCGT's Dynkin convention."""
 abstract type Sp{N} <: NonabelianSymm end
-"""`SO{N}` is the special-orthogonal non-Abelian family; `N` is its defining-group dimension and q-labels use LurCGT's Dynkin convention."""
+"""``\\mathrm{SO}(N)`` is the special-orthogonal non-Abelian family; its Julia type parameter `N` is the defining-group dimension and q-labels use LurCGT's Dynkin convention."""
 abstract type SO{N} <: NonabelianSymm end
 """`G2` is the exceptional rank-two non-Abelian symmetry family with two-component Dynkin q-labels."""
 abstract type G2 <: NonabelianSymm end
@@ -32,14 +32,30 @@ include("Sp.jl")
 include("SO.jl")
 include("G2.jl")
 
-"""Return `true` when symmetry family type `S` is Abelian and `false` for non-Abelian families; `S` must be a subtype of `Symmetry`."""
+"""
+    isabelian(S) -> Bool
+
+Return whether symmetry family type `S` is Abelian.
+
+`S` must be a subtype of `Symmetry`, for example `U1`, `Z{N}`, or `SU{N}`.
+The result is `true` for `AbelianSymm` families and `false` for
+`NonabelianSymm` families.
+"""
 isabelian(::Type{<:AbelianSymm}) = true
 isabelian(::Type{<:NonabelianSymm}) = false
 
 isvalidsymm(::Any) = false
 
 nlops(::Any) = 0
-"""Return the number of commuting weight (`z`) operators for symmetry type `S`; this is the q-label tuple width used by its representations."""
+"""
+    nzops(S) -> Int
+
+Return the q-label width for symmetry family type `S`.
+
+`S` is a symmetry family type. The returned count is the number of commuting
+weight (`z`) operators and therefore the required length of every q-label tuple
+for that family.
+"""
 nzops(::Any) = 0
 
 getsr(::Any) = error("Not implemented")
@@ -51,6 +67,9 @@ getszdiag(::Any) = error("Not implemented")
 Return the q-label of the dual irrep of non-Abelian symmetry family `S`.
 For `SU`, duality reverses the Dynkin-label tuple; the currently supported
 non-Abelian families are self-dual in this q-label representation.
+
+`S` selects the non-Abelian symmetry family and `q` is one q-label tuple for
+that family.
 """
 get_dualq(::Type{S}, q::NTuple{NZ, Int}) where {S<:NonabelianSymm, NZ} =
     S<:SU ? reverse(q) : q

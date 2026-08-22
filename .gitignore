@@ -4,6 +4,7 @@ Manifest.toml
 *.jl.mem
 .DS_Store
 .worktrees/
+docs/build/
 test/fixedint_data*
 test/fixedint_*
 test/g2_*

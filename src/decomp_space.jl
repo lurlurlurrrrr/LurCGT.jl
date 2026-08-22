@@ -116,15 +116,26 @@ end
 # Assume that local Hilbert space is orthonormal
 # symm: tuple of symmetries 
 """
-    decompose_space(symm, weights, lowering_ops)
+    decompose_space(symm, weights, lowering_ops) -> (basis, mult_ind)
 
-Decompose a local Hilbert space into symmetry multiplets.
+Decompose a local Hilbert space into orthonormal symmetry multiplets.
 
-`symm` is the tuple of symmetry types. `weights[n][basis]` gives the z-weight of
-local basis state `basis` under symmetry `n`. `lops[n]` contains the lowering
-operator matrices for symmetry `n`. The result is the orthogonal basis
-transformation and sector-space data used by Telum local spaces. Inputs must
-describe mutually commuting symmetry actions.
+# Arguments
+
+- `symm`: tuple of symmetry family types. Its order defines the product-symmetry
+  order used by all other arguments and in the returned sector keys.
+- `weights`: `weights[n][state]` is the z-weight tuple of local basis state
+  `state` for symmetry factor `symm[n]`. Every vector must have the same length,
+  namely the local Hilbert-space dimension.
+- `lowering_ops`: `lowering_ops[n]` contains the lowering-operator matrices for
+  `symm[n]`, in that family's standard simple-root order. Each matrix acts on
+  the same local basis indexed by `weights`.
+
+The supplied symmetry actions must commute across factors and represent the
+weights and lowering operators consistently. The result `basis` is a sparse
+orthogonal change-of-basis matrix from the original local basis to the grouped
+symmetry-adapted basis. `mult_ind` maps each product q-label tuple to inclusive
+column ranges in `basis`, one range for each outer-multiplicity copy.
 """
 function decompose_space(symm::NTuple{N, Any},
     weights::NTuple{N, Vector{<:Tuple{Vararg{Int}}}},
@@ -584,7 +595,35 @@ function test_input(nchannels::Int=3)
 end
 
 # N: The number of symmetries
-"""Decompose sparse irreducible operator `irop` into symmetry blocks. `symm`, `mult_ind`, `space_list`, and `irop_qlabel` describe the representation basis; returns q-label-keyed reduced blocks and multiplicity metadata."""
+"""
+    decompose_irop(symm, irop, mult_ind, qlabel) -> blocks
+
+Decompose a symmetry-adapted irreducible-operator multiplet into reduced blocks.
+
+For each nonzero pair of local symmetry sectors, this writes the operator block
+as a tensor product of the product Clebsch-Gordan tensor (CGT) and a reduced
+matrix tensor (RMT). The CGT carries all irrep-weight and operator-component
+dependence; the RMT carries the row/column outer-multiplicity indices and the
+CGT outer-multiplicity indices. Equivalently, each block is reconstructed as
+`reshape(CGT_matrix * vec(RMT), size(block))`.
+
+# Arguments
+
+- `symm`: tuple of symmetry family types, in the same product order used to
+  construct `irop`.
+- `irop`: sparse array of shape `(local_dim, local_dim, multiplet_dim)` whose
+  third axis enumerates the irreducible-operator components in the basis implied
+  by `qlabel`.
+- `mult_ind`: sector-to-range map returned by [`decompose_space`](@ref); each
+  range selects one outer-multiplicity copy of a product q-label sector.
+- `qlabel`: product q-label of the operator multiplet, with one q-label tuple
+  for each symmetry factor in `symm`.
+
+Returns a vector of `((out_qs, in_qs, qlabel), rmt)` pairs. `out_qs` and
+`in_qs` are product q-label tuples for the matrix's row and column sectors;
+`rmt` is the RMT factor in the CGT ⊗ RMT decomposition and includes the CGT
+outer-multiplicity axes. Zero sector pairs are omitted.
+"""
 function decompose_irop(symm::NTuple{N, Any},
     irop::SparseArray{Float64, 3},
     mult_ind::Dict{NTuple{N, Tuple{Vararg{Int}}}, Vector{Tuple{Int, Int}}},
@@ -637,7 +676,23 @@ function decompose_irop(symm::NTuple{N, Any},
     return data
 end
 
-"""Transform sparse irreducible-operator tensor `irop` in place using basis matrix `vecs`. The first two physical axes are changed consistently; returns the mutated `irop`."""
+"""
+    transf_basis!(irop, vecs) -> irop
+
+Transform an irreducible-operator tensor into a new local basis in place.
+
+# Arguments
+
+- `irop`: sparse `(local_dim, local_dim, multiplet_dim)` tensor to mutate. Its
+  first two axes are interpreted as matrix row and column axes; the third axis
+  is preserved.
+- `vecs`: sparse change-of-basis matrix whose columns are the new basis vectors
+  expressed in the old basis. It must have one row per `irop` local-basis state.
+
+Each component is replaced by `vecs' * irop[:, :, component] * vecs`. Entries
+whose magnitude is below `1e-12` are removed after the transformation. The
+function returns the same mutated `irop` object.
+"""
 function transf_basis!(irop::SparseArray{Float64, 3}, 
     vecs::SparseMatrixCSC{Float64})
     for i in 1:size(irop, 3)
@@ -748,7 +803,28 @@ function get_irops_sector_!(::Val{I},
     end
 end
 
-"""Construct symmetry-adapted irreducible-operator data from `symm`, weight operators `z_ops`, lowering operators, and one maximal-weight local operator. Returns the sparse IROP and its q-label."""
+"""
+    get_IROP(symm, z_ops, lowering_ops, mwirop) -> (irop, qlabel)
+
+Construct every component of an irreducible operator multiplet from one
+maximal-weight operator.
+
+# Arguments
+
+- `symm`: tuple of symmetry family types; its order defines the product
+  q-label order in the result.
+- `z_ops`: `z_ops[n][state]` is the z-weight tuple of local basis state `state`
+  for symmetry factor `symm[n]`.
+- `lowering_ops`: `lowering_ops[n]` holds the local lowering-operator matrices
+  for `symm[n]`, in standard simple-root order.
+- `mwirop`: nonzero local matrix representing the multiplet's maximal-weight
+  component.
+
+The method obtains the maximal q-label from commutators with the z operators,
+generates the remaining components by repeated commutators with lowering
+operators, and orthogonalizes their component basis. It returns the sparse
+`(local_dim, local_dim, multiplet_dim)` tensor and its product q-label tuple.
+"""
 function get_IROP(symm::NTuple{N, Any},
     z_ops::NTuple{N, Vector{<:Tuple{Vararg{Int}}}},
     lowering_ops::NTuple{N, Vector{<:AbstractMatrix{<:Real}}},

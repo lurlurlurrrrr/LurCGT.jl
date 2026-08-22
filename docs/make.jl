@@ -10,7 +10,13 @@ makedocs(
     pages = [
         "Home" => "index.md",
         "Getting started" => "getting-started.md",
-        "Public API" => "api.md",
+        "CGT and related symbols" => "cgt-and-related-symbols.md",
+        "Public API" => [
+            "Overview" => "api.md",
+            "Symmetries" => "api/symmetries.md",
+            "Fusion and CGT transforms" => "api/cgt-transforms.md",
+            "Local-space operators" => "api/local-operators.md",
+        ],
     ],
 )
 

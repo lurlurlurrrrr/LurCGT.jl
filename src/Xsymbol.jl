@@ -815,8 +815,10 @@ is_outgoing_larger(::NTuple{U, NTuple{NZ, Int}},
 
 Build outer-multiplicity bookkeeping for one CGT canonical basis.
 
-`upsp` and `dnsp` are sorted qlabel tuples for the two sides of a CGT. `is1j`
-selects the one-dimensional identity-tensor shortcut. The returned `CGTom` maps
+`upsp` and `dnsp` are sorted qlabel tuples for the two sides of a CGT. Set
+`is1j=true` when these spaces describe a 1j-symbol: such a symbol has no outer
+multiplicity, so the function returns its single fixed bookkeeping slot instead
+of enumerating fusion-tree outer-multiplicity data. The returned `CGTom` maps
 flat OM indices to central spaces and upper/down tree indices and records the
 orientation needed when flattening central-space OM matrices.
 """

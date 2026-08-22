@@ -35,7 +35,7 @@ end
     expected_exports = Set(Symbol[
         :LurCGT, :Z, :U1, :SU, :SO, :Sp, :G2,
         :Symmetry, :AbelianSymm, :NonabelianSymm,
-        :add_qn, :decompose_irop, :decompose_space, :detect_1j, :dimension,
+        :add_qn, :decompose_irop, :decompose_space, :dimension,
         :get_CGTom, :get_IROP, :get_conj_perm, :get_dualq,
         :getNsave_CGTperm, :getNsave_CGTSVD, :getNsave_CGTQR,
         :getNsave_Xsymbol, :getNsave_Conjperm,

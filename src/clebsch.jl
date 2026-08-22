@@ -1532,14 +1532,20 @@ end
 """
     to_float(cgt, FT=Float64, normalize=true) -> (sparse_cgt, qlabels, directions)
 
-Convert the exact block-sparse Clebsch-Gordan tensor `cgt` to a floating-point
-`SparseArray{FT}`. `FT` selects the output floating-point type. When
-`normalize=true`, the returned outer-multiplicity channels include the exact
-normalization factors stored by `cgt`.
+Convert an exact block-sparse Clebsch-Gordan tensor to a floating-point sparse
+tensor.
+
+# Arguments
+
+- `cgt`: exact non-Abelian Clebsch-Gordan tensor to convert.
+- `FT=Float64`: floating-point element type of the returned `SparseArray`.
+- `normalize=true`: whether to multiply each outer-multiplicity channel by the
+  square root of its exact normalization factor stored in `cgt.nfactor`.
 
 The sparse tensor has one physical axis per CGT leg and a trailing
 outer-multiplicity axis. `qlabels` gives the irrep q-label for every physical
-axis and `directions` records the corresponding `+`/`-` leg directions.
+axis and `directions` records the corresponding `+`/`-` leg directions. Returns
+`(sparse_cgt, qlabels, directions)`.
 """
 function to_float(cgt::CGT{S, CT, NZ, N},
     ::Type{FT}=Float64,

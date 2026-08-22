@@ -244,9 +244,9 @@ function get_CGTSVD_split_basis_direct(::Type{S},
         right_up_s, right_dn_dualq_s, right_ctlegs_s =
             LurCGT.standardize_spaces_and_legs(S, right_up, right_dn_dualq, right_ctlegs, false)
 
-        center_om = get_CGTom(S, center_up_s, center_dn_s, detect_1j(S, center_up_s, center_dn_s))
-        left_om = get_CGTom(S, left_up_s, left_dn_q_s, detect_1j(S, left_up_s, left_dn_q_s))
-        right_om = get_CGTom(S, right_up_s, right_dn_dualq_s, detect_1j(S, right_up_s, right_dn_dualq_s))
+        center_om = get_CGTom(S, center_up_s, center_dn_s, LurCGT.detect_1j(S, center_up_s, center_dn_s))
+        left_om = get_CGTom(S, left_up_s, left_dn_q_s, LurCGT.detect_1j(S, left_up_s, left_dn_q_s))
+        right_om = get_CGTom(S, right_up_s, right_dn_dualq_s, LurCGT.detect_1j(S, right_up_s, right_dn_dualq_s))
         @assert center_om.totalOM == 1
         @assert left_om.totalOM == omL
         @assert right_om.totalOM == omR
