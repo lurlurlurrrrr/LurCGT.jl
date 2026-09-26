@@ -8,11 +8,6 @@ size parameter is required.
 """
 isvalidsymm(::Type{G2}) = true
 
-"""
-    totxt(::Type{G2}) -> String
-
-Return the stable text key used for G2 file, folder, and database names.
-"""
 totxt(::Type{G2}) = "G2"
 
 """

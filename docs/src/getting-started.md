@@ -17,20 +17,19 @@ using LurCGT
 S = SU{2}
 fundamental = (1,) # 2S
 dimension(S, fundamental)  # 2
-get_dualq(S, fundamental)  # (1,)
+get_dualq(S, fundamental)  # (1,), since every irrep of SU(2) is self-dual
 ```
 
-## Floating sparse Clebsch-Gordan tensors
+## Convert to readable sparse float arrays
 
 `to_float` converts an exact Clebsch-Gordan tensor (CGT) to a floating-point
-sparse array. The coefficients are generated exactly, then converted to the
-requested floating-point type. This makes the sparse array convenient for
-inspecting coefficients or using them in numerical code.
+sparse array. This function is for debugging purposes only. Internal functions
+in LurCGT and Telum do not use it.
 
 The following example couples two spin-``1 / 2`` ``\mathrm{SU}(2)`` irreps:
 ``S = 1 / 2 \otimes S = 1 / 2 \to S = 0 \oplus S = 1``. The two spin-``1 / 2``
-irreps are the input legs, and the singlet and triplet irreps are the output
-legs.
+irreps are called inputs, and the singlet and triplet irreps are called
+outputs.
 
 ```@example spin_half_coefficients
 using LurCGT
@@ -49,14 +48,12 @@ order. The trailing axis enumerates outer-multiplicity channels. It has length
 one in this two-input, one-output ``\mathrm{SU}(2)`` example. See
 [CGT and related symbols](@ref) for the general case.
 
-Use `normalize=true` when the numeric tensor must include LurCGT's stored
-outer-multiplicity normalization factors; it is the default.
-
 ## Singlet and triplet coefficients
 
 For the basis order ``\lvert \uparrow \rangle, \lvert \downarrow \rangle`` on
-each input and ``\lvert 1, 1 \rangle, \lvert 1, 0 \rangle,
-\lvert 1, -1 \rangle`` on the triplet output, the sparse-array values agree
+each input and ``\lvert S, S_z \rangle = \lvert 0, 0 \rangle, \lvert 1, 1 \rangle, \lvert 1, 0 \rangle,
+\lvert 1, -1 \rangle`` on the singlet and triplet outputs, the sparse-array values
+agree
 with the usual coupled states:
 
 ```math
@@ -86,8 +83,6 @@ expected_triplet = cat(
 )
 
 (
-    singlet = singlet_coeffs,
-    triplet = triplet_coeffs,
     singlet_matches = singlet_coeffs ≈ expected_singlet,
     triplet_matches = triplet_coeffs ≈ expected_triplet,
 )

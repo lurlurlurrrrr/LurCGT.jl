@@ -1,4 +1,4 @@
-"""Abstract supertype for LurCGT symmetry-family types. Use the concrete family type, not an instance, as API arguments."""
+"""Abstract supertype for symmetry-family types. Use the concrete family type, not an instance, as API arguments."""
 abstract type Symmetry end
 """Abstract subtype for Abelian symmetry families. Their sectors have trivial Clebsch-Gordan coefficients and one q-label component."""
 abstract type AbelianSymm <: Symmetry end
@@ -11,12 +11,24 @@ abstract type Z{N} <: AbelianSymm end
 abstract type U1 <: AbelianSymm end
 """``\\mathrm{SU}(N)`` is the special-unitary non-Abelian family of rank `N - 1`; its Julia type parameter `N` selects the defining representation dimension."""
 abstract type SU{N} <: NonabelianSymm end
-"""``\\mathrm{Sp}(N)`` is the compact symplectic non-Abelian family; its Julia type parameter `N` and q-labels use LurCGT's Dynkin convention."""
+"""``\\mathrm{Sp}(N)`` is the compact symplectic non-Abelian family; its Julia type parameter `N` and q-labels use this library's Dynkin convention."""
 abstract type Sp{N} <: NonabelianSymm end
-"""``\\mathrm{SO}(N)`` is the special-orthogonal non-Abelian family; its Julia type parameter `N` is the defining-group dimension and q-labels use LurCGT's Dynkin convention."""
+"""``\\mathrm{SO}(N)`` is the special-orthogonal non-Abelian family; its Julia type parameter `N` is the defining-group dimension and q-labels use this library's Dynkin convention."""
 abstract type SO{N} <: NonabelianSymm end
 """`G2` is the exceptional rank-two non-Abelian symmetry family with two-component Dynkin q-labels."""
 abstract type G2 <: NonabelianSymm end
+
+"""
+    totxt(::Type{S}) -> String where {S<:Symmetry}
+
+Return the stable text key for symmetry family `S`, used in cache and database
+names. Supported families include `Z{N}`, `U1`, `SU{N}`, `SO{N}`, `Sp{N}`, and
+`G2`; for example, `totxt(SU{2})` returns `"SU2"`.
+
+Specialized methods provide compact keys for the supported symmetry families.
+For any other subtype of `Symmetry`, the general method returns `string(S)`.
+"""
+totxt(::Type{S}) where {S<:Symmetry} = string(S)
 
 # Stable family tags keep symmetry type hashes distinct from Julia's Type hash.
 Base.hash(::Type{Z{N}}, h::UInt) where N = hash((0, N), h)

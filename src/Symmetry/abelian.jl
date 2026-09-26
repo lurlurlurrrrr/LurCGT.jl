@@ -35,6 +35,5 @@ qlab2mwz(::Type{<:AbelianSymm}, q::Tuple{Int}) = q
 nzops(::Type{<:AbelianSymm}) = 1
 nlops(::Type{<:AbelianSymm}) = 0
 
-"""Return the stable filename/cache text representation of symmetry type `S`, such as `"U1"` or `"Z2"`."""
 totxt(::Type{U1}) = "U1"
 totxt(::Type{Z{N}}) where N = "Z$N"

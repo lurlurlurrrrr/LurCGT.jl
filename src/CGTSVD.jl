@@ -61,7 +61,7 @@ canonical CGT coefficients to this new split basis:
 
 The rows of `obj.svd_arr` are ordered first by increasing intermediate sector
 `q`, then by the left/right outer-multiplicity ordering used internally by
-`LurCGT`. The field `obj.bond_sps` stores this block structure as
+this library. The field `obj.bond_sps` stores this block structure as
 `(q, omL, omR)` triples.
 
 Returns `nothing` for Abelian symmetries.

@@ -14,11 +14,6 @@ isSU2(::Any) = false
 isSUN(::Type{<:SU}) = true
 isSUN(::Any) = false
 
-"""
-    totxt(::Type{SU{N}}) -> String
-
-Return the stable text key used for SU(N) file, folder, and database names.
-"""
 # text expression of the symmetry. Needed to construct file/folder name
 totxt(::Type{SU{N}}) where N = "SU$(N)"
 

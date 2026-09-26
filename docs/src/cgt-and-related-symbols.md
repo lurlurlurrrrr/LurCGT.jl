@@ -1,24 +1,34 @@
 # CGT and related symbols
 
-A Clebsch-Gordan tensor (CGT) is an intertwiner between products of irreducible
-representations (irreps). LurCGT uses CGTs to separate symmetry-determined
-coefficient data from the reduced tensors that carry a tensor-network
+A Clebsch-Gordan tensor (CGT) generalizes ordinary three-dimensional
+Clebsch-Gordan coefficients. LurCGT stores and uses a CGT as a tensor of
+symmetry-determined coefficients: its ordinary axes are basis-state axes for the
+participating irreducible representations (irreps), and its last axis
+enumerates outer-multiplicity channels. This coefficient tensor separates
+symmetry data from the reduced tensors that carry a tensor-network
 calculation's variational data.
+
+Mathematically, the same data can also be described as an intertwiner between
+products of irreps. This page emphasizes the tensor viewpoint because it is the
+form used by LurCGT's storage, contraction, and basis-change routines.
 
 ## Arbitrary-rank CGTs
 
 A CGT may have any number of input and output legs. Its physical axes carry
 irrep basis states, and each leg has a q-label and direction. The familiar
 three-leg coupling is the special case
-``q_1 \otimes q_2 \to q_3``. More generally, a CGT represents an invariant map
-between two products of irreps, such as
-``q_1 \otimes \cdots \otimes q_m \to r_1 \otimes \cdots \otimes r_n``.
+``q_1 \otimes q_2 \to q_3``. More generally, a CGT has one tensor leg for each
+input or output irrep, such as
+``q_1, \ldots, q_m, r_1, \ldots, r_n`` for the coupling conventionally written
+as ``q_1 \otimes \cdots \otimes q_m \to r_1 \otimes \cdots \otimes r_n``.
+LurCGT's stored CGT convention orders input legs first and output legs second;
+within each group, legs are sorted by ascending q-label.
 
-LurCGT stores a CGT block-sparsely by weight sector. The final array axis is an
-outer-multiplicity axis; it is separate from the physical irrep-basis axes.
-For an ordinary three-leg coupling, use `getNsave_cg3`. Internally, higher-rank
-CGTs are assembled and transformed through fusion trees and the cached
-recoupling data described below.
+LurCGT stores the basic three-leg Clebsch-Gordan coefficient tensors and uses
+them as building blocks for higher-rank CGTs. Internally, arbitrary-rank CGTs are
+assembled and transformed through fusion trees from the stored three-leg
+coefficients and the cached F- and R-symbol data described below; they are not
+stored as independent primitive CGT objects.
 
 ## Outer multiplicity and the canonical basis
 
@@ -29,10 +39,8 @@ channels, even after all external q-labels have been fixed.
 
 LurCGT fixes this freedom by using a canonical fusion-tree basis. The basis is
 determined by the ordered external q-labels, intermediate irreps, and
-outer-multiplicity labels of the constituent three-leg couplings. The
-bookkeeping object returned by `get_CGTom` describes the flattened canonical
-outer-multiplicity space. This fixed convention makes cached CGTs and basis
-transforms reproducible.
+outer-multiplicity labels of the constituent three-leg couplings. This fixed
+convention makes cached CGTs and basis transforms reproducible.
 
 Changing the fusion tree or permuting legs can mix outer-multiplicity channels.
 Use `getNsave_CGTperm` for the corresponding canonical-basis transformation;
@@ -50,12 +58,13 @@ The recoupling symbols express elementary changes of CGT basis.
   ``q \otimes q \to r``. Obtain the cached exact matrix with
   `getNsave_Rsymbol`.
 - **X-symbols** recouple the outer-multiplicity bases that result when two CGTs
-  are contracted. `getNsave_Xsymbol` returns the dense coefficient array for
-  the requested contracted legs.
+  are contracted. They are computed from sequences of F- and R-symbol moves.
+  `getNsave_Xsymbol` returns the dense coefficient array for the requested
+  contracted legs.
 
 These symbols are used internally to keep contractions, permutations, and
-tensor decompositions in the canonical CGT basis. They are cached because the
-underlying coefficients are exact but can be expensive to construct.
+tensor decompositions in the canonical CGT basis. The primitive stored data are
+the basic three-leg Clebsch-Gordan coefficients together with F- and R-symbols.
 
 ## Related CGT transformations
 
@@ -64,3 +73,15 @@ needed by symmetry-respecting SVD and QR decompositions. They leave the
 reduced-tensor calculation to the caller while accounting for the symmetry and
 outer-multiplicity structure of the split. `to_float` converts an exact CGT to
 a numerical sparse array when an explicit coefficient representation is needed.
+
+## Further reading
+
+This page gives only the conventions needed to use LurCGT. For more background,
+see:
+
+- Clebsch-Gordan tensor:
+  [SciPost Physics Codebases 40](https://scipost.org/SciPostPhysCodeb.40).
+- X-symbols for non-Abelian tensor contractions:
+  [Phys. Rev. Research 2, 023385](https://journals.aps.org/prresearch/abstract/10.1103/PhysRevResearch.2.023385).
+- F- and R-symbols in tensor-category notation:
+  [TensorKit.jl category appendix](https://quantumkithub.github.io/TensorKit.jl/stable/appendix/categories/).
