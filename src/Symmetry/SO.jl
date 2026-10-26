@@ -9,7 +9,7 @@ Return whether `SO{N}` is supported by this implementation.
 odd and even cases are handled, but several qlabel and tableau conventions
 depend on the parity of `N`.
 """
-isvalidsymm(::Type{SO{N}}) where N = 4 <= N
+isvalidsymm(::Type{SO{N}}) where N = 2 <= N
 
 isSON(::Type{<:SO}) = true
 isSON(::Any) = false
@@ -228,6 +228,20 @@ function getqlabel(::Type{SO{N}}, z::NTuple{NZ, Int}) where {N, NZ}
     end
     qlabel[NZ-1:NZ] = determine_last(SO{N}, z[1], z[2])
     return Tuple(qlabel)
+end
+
+getqlabel(::Type{SO{3}}, z::NTuple{1, Int}) = (z[1],)
+
+function getdefirep(::Type{SO{3}}, ::Type{RT}) where {RT<:Number}
+    def_sl = getsl_def(SO{3}, RT)
+    def_sl[1][(0,)] = RT[2;;]
+    def_sz = getsz_def(SO{3})
+    innerprod = get_identity_innerprod(SO{3}, RT, def_sz)
+    innerprod[(0,)] = RT[2;;]
+    inv_innerprod = get_identity_invinprod(SO{3}, RT, def_sz)
+    inv_innerprod[(0,)] = (RT[1;;], 1//2)
+    dim = defirepdim(SO{3})
+    return Irep{SO{3}, 1, 1, RT}(def_sl, def_sz, innerprod, inv_innerprod, (2,), dim)
 end
 
 """
