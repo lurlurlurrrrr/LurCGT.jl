@@ -17,7 +17,10 @@ coverage, duality/conjugation, and consistent cache migration. Retain `Irep`
 and its sparse weight-block storage.
 
 Part 1 replaces tableau vertices with tensor-word vertices and fundamental
-embeddings within the existing traversal. The extended seed catalogue below remains staged integration work.
+embeddings within the existing traversal for currently supported A–D/G2
+representations. All spin work is deferred here: symbol encodings and operators,
+fundamental highest words, numerical realizations, and public-label integration.
+Additional E/F seeds also remain staged integration work.
 Part 2 supplies ordered string labels and proposed numerical schedules. Numerical realization
 and API design can proceed alongside those parts, but production activation
 requires their relevant acceptance gates. Introduce the cache namespace before
@@ -139,6 +142,36 @@ not a target Chevalley generator: its weight change and commutators differ.
 The separate F4 numerical realization and its acceptance gate are specified in
 [numerical seed realizations](#numerical-seed-realizations).
 Keep the existing validated G2 numerical seed.
+
+### Deferred spin vertices and highest words
+
+This work is explicitly outside part 1. Its word-only vertex type can accommodate
+these symbols later; no spin alphabet, recipe, or implementation is needed to
+complete the current point replacement.
+
+| Family | Fundamental node | Highest word |
+| --- | --- | --- |
+| B_r | r | `[s(+,...,+)]` |
+| D_r | r−1 | `[s(+,...,+,-)]` |
+| D_r | r | `[s(+,...,+)]` |
+
+Each `s(...)` is one atomic symbol, encoded by one integer. These are true spin
+fundamentals, distinct from the existing vector-derived doubled-spin labels.
+
+For spin symbols ``s(\sigma_1,\ldots,\sigma_r)``, with each sign ±1, the
+orthogonal-coordinate weight is ``\frac12\sum_j\sigma_j e_j``. Encode them
+in a disjoint range beyond the existing vector alphabet, using a deterministic
+sign-bit encoding with explicit integer-overflow checks. Symbols in both D
+chiralities have distinct sign patterns, so no chirality identifier is needed.
+
+- In B and D, for i<r, ``f_i`` changes adjacent signs `(+,-)` at positions
+  i,i+1 into `(-,+)` and is undefined otherwise.
+- In B, ``f_r`` changes the final `+` to `-`. All ``2^r`` sign patterns occur.
+- In D, ``f_r`` changes the final pair `(+,+)` to `(-,-)`. Even and odd numbers
+  of minus signs give the two separate components of size ``2^{r-1}``.
+- Raising reverses these changes. Local spin epsilon/phi are 0 or 1. Convert
+  weights to the existing doubled, reversed SO z-coordinates: the stored
+  tuple is ``(\sigma_r,\ldots,\sigma_1)``. Validate transitions against `getdz`.
 
 ## Complete fundamental construction catalogue
 
