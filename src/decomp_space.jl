@@ -1,4 +1,18 @@
 """
+    _local_payload_type(lowering_ops, initial=Float64)
+
+Promote physical local-space matrices to Float64 or ComplexF64, including the
+operator seed type `initial`. Empty Abelian lowering lists are supported.
+"""
+function _local_payload_type(lowering_ops, initial::Type=Float64)
+    complex = !(initial <: Real)
+    for ops in lowering_ops, op in ops
+        complex |= !(eltype(op) <: Real)
+    end
+    return complex ? ComplexF64 : Float64
+end
+
+"""
     comm(A, B)
 
 Return the matrix commutator `A * B - B * A`.
@@ -22,13 +36,13 @@ corresponding lowering block.
 """
 # i, j: To assert that weights are valid
 function toblk(symm::NTuple{N, Any},
-    mat::SparseArray{Float64, 2},
+    mat::SparseArray{T, 2},
     weight_zips::Vector{NTuple{N, Tuple{Vararg{Int}}}},
     omvec::Dict{NTuple{N, Tuple{Vararg{Int}}}, Vector{Int}},
     nthweight::Vector{Int},
     i::Int,
-    j::Int) where N
-    blks = Dict{NTuple{N, Tuple{Vararg{Int}}}, SparseMatrixCSC{Float64}}()
+    j::Int) where {N, T}
+    blks = Dict{NTuple{N, Tuple{Vararg{Int}}}, SparseMatrixCSC{T, Int}}()
     S = symm[i]
     for (k, v) in mat.data
         a, b = k.I
@@ -39,7 +53,7 @@ function toblk(symm::NTuple{N, Any},
 
         ma, mb = omvec[wa], omvec[wb]
         ima, imb = length(ma), length(mb)
-        if !haskey(blks, wb) blks[wb] = spzeros(Float64, ima, imb) end
+        if !haskey(blks, wb) blks[wb] = spzeros(T, ima, imb) end
 
         blks[wb][na, nb] = v
     end
@@ -56,13 +70,13 @@ weight `w`. `mult_inds` are original local basis rows carrying that weight.
 `stidx` and `inc` track the flattened output-column offset. `reps` supplies the
 irrep dimensions/ranges needed to recurse over product-symmetry factors.
 """
-function add_vectors!(ortho_vecs_sparse::SparseMatrixCSC{Float64},
+function add_vectors!(ortho_vecs_sparse::SparseMatrixCSC{T, Int},
     mult_inds::Vector{Int},
-    vectors::Array{Float64, M},
+    vectors::Array{T, M},
     stidx::Int,
     inc::Int,
     reps::NTuple{N, Irep},
-    w::NTuple{N, Tuple{Vararg{Int}}}) where {N, M}
+    w::NTuple{N, Tuple{Vararg{Int}}}) where {N, M, T}
 
     @assert M == N + 1
     rep = reps[end]
@@ -91,11 +105,11 @@ Insert transformed IROP blocks into the global three-dimensional sparse array.
 the accumulated flattened sector offset. `reps` and `w` provide the sector
 ranges used to place each 2D IROP matrix at the correct third-axis slice.
 """
-function add_irops!(irop_3d::SparseArray{Float64, 3},
-    irops::Array{SparseMatrixCSC{Float64}, N},
+function add_irops!(irop_3d::SparseArray{T, 3},
+    irops::Array{SparseMatrixCSC{T, Int}, N},
     si::Int,
     reps::NTuple{N, Irep},
-    w::NTuple{N, Tuple{Vararg{Int}}}) where N
+    w::NTuple{N, Tuple{Vararg{Int}}}) where {N, T}
 
     rep = reps[end]
     a, b = rep.Sz[w[end]]; @assert size(irops, N) == b - a + 1
@@ -133,16 +147,28 @@ Decompose a local Hilbert space into orthonormal symmetry multiplets.
 
 The supplied symmetry actions must commute across factors and represent the
 weights and lowering operators consistently. The result `basis` is a sparse
-orthogonal change-of-basis matrix from the original local basis to the grouped
+unitary change-of-basis matrix from the original local basis to the grouped
 symmetry-adapted basis. `mult_ind` maps each product q-label tuple to inclusive
 column ranges in `basis`, one range for each outer-multiplicity copy.
 """
 function decompose_space(symm::NTuple{N, Any},
     weights::NTuple{N, Vector{<:Tuple{Vararg{Int}}}},
-    lops::NTuple{N, Vector{<:AbstractMatrix{<:Real}}}) where N
+    lops::NTuple{N, Vector{<:AbstractMatrix{<:Number}}}) where N
+    return _decompose_space(_local_payload_type(lops), symm, weights, lops)
+end
+
+"""
+    _decompose_space(T, symm, weights, lops)
+
+Build the state basis with concrete physical payload type `T`; CGT coefficients
+remain real. This function is the scalar-type barrier for `decompose_space`.
+"""
+function _decompose_space(::Type{T}, symm::NTuple{N, Any},
+    weights::NTuple{N, Vector{<:Tuple{Vararg{Int}}}},
+    lops::NTuple{N, Vector{<:AbstractMatrix{<:Number}}}) where {N, T}
 
     # Convert all lowering operators to sparse matrices
-    lops_sparse = ntuple(i -> SparseArray.(Float64.(lop) for lop in lops[i]), N)
+    lops_sparse = ntuple(i -> [SparseArray(T.(lop)) for lop in lops[i]], N)
     weights_zip = Vector{NTuple{N, Tuple{Vararg{Int}}}}()
     spdim = length(weights[1])
     for i in 1:spdim
@@ -162,7 +188,7 @@ function decompose_space(symm::NTuple{N, Any},
         push!(nthweight, length(mult_vecs[w]))
     end
     f = (lop, i, j) -> toblk(symm, lop, weights_zip, mult_vecs, nthweight, i, j)
-    lops_blk = Tuple([f(lops_sparse[i][j], i, j) for j=1:length(lops_sparse[i])] for i=1:N)
+    lops_blk = ntuple(i -> Dict{NTuple{N, Tuple{Vararg{Int}}}, SparseMatrixCSC{T, Int}}[f(lop, i, j) for (j, lop) in enumerate(lops_sparse[i])], N)
 
     # Overall structure of this algorithm is similar to the one in clebsch.jl
     # Inner multiplicity count
@@ -175,7 +201,7 @@ function decompose_space(symm::NTuple{N, Any},
     # Obtained vectors are not orthogonalized
     # Dim of array: (spdim1, N inner_mults..., outer_mult)
     foundvecs = Vector{Tuple{NTuple{N, Tuple{Vararg{Int}}}, 
-        Vector{Tuple{NTuple{N, Tuple{Vararg{Int}}}, Array{Float64, N+2}}}}}()
+        Vector{Tuple{NTuple{N, Tuple{Vararg{Int}}}, Array{T, N+2}}}}}()
 
     remain_dim = spdim
     
@@ -186,14 +212,14 @@ function decompose_space(symm::NTuple{N, Any},
             outer_mult = remain_inmult[w]
             if outer_mult > 0
                 qlabels_out = ntuple(i->getqlabel(symm[i], w[i]), N)
-                output_ireps = ntuple(i->getNsave_irep(symm[i], BigInt, qlabels_out[i]), N)
+                output_ireps = ntuple(i->getNsave_irep(symm[i], BigInt, qlabels_out[i])::Irep, N)
 
                 # println("Detected new sector: qlabels=$(qlabels_out), outer_mult=$(outer_mult)")
 
                 # Find a new highest weight state vector from 'foundvecs'
                 inmult = length(mult_vecs[w])
                 prev_found = inmult - remain_inmult[w]
-                already_found = Matrix{Float64}(undef, inmult, prev_found + outer_mult)
+                already_found = Matrix{T}(undef, inmult, prev_found + outer_mult)
                 stidx = 1
                 for (prev_q, prev_vecs_w) in foundvecs
                     prev_multiplet = Dict(prev_vecs_w)
@@ -206,7 +232,7 @@ function decompose_space(symm::NTuple{N, Any},
                 end
                 @assert stidx == prev_found + 1
 
-                mwstates = Matrix{Float64}(undef, inmult, outer_mult)
+                mwstates = Matrix{T}(undef, inmult, outer_mult)
                 start_index = 1
                 for oidx=1:outer_mult
                     mwstate, start_index = get_mwstate(
@@ -216,7 +242,7 @@ function decompose_space(symm::NTuple{N, Any},
                 end
 
                 multiplet = get_vectors_sector(output_ireps, lops_blk, mwstates, w)
-                vecs_w = Vector{Tuple{NTuple{N, Tuple{Vararg{Int}}}, Array{Float64, N+2}}}()
+                vecs_w = Vector{Tuple{NTuple{N, Tuple{Vararg{Int}}}, Array{T, N+2}}}()
                 for w in sort(collect(keys(multiplet)); lt=lt_multisymm_weights, rev=true)
                     nvec = prod(size(multiplet[w])[2:end])
                     remain_inmult[w] -= nvec
@@ -228,7 +254,7 @@ function decompose_space(symm::NTuple{N, Any},
             end
         end
     end
-    ortho_vecs_sparse = sparse(zeros(Float64, spdim, spdim))
+    ortho_vecs_sparse = sparse(zeros(T, spdim, spdim))
 
     mult_ind = Dict{NTuple{N, Tuple{Vararg{Int}}}, Vector{Tuple{Int, Int}}}()
     oldq = nothing
@@ -285,11 +311,11 @@ end
 
 # There is a similar version of this function when getting IROP
 function get_vectors_sector(ireps::NTuple{N, Irep},
-    lops_blk::NTuple{N, Vector{Dict{NTuple{N, Tuple{Vararg{Int}}}, SparseMatrixCSC{Float64}}}},
-    mwstates::Matrix{Float64},
-    mw::NTuple{N, Tuple{Vararg{Int}}}) where N
+    lops_blk::NTuple{N, Vector{Dict{NTuple{N, Tuple{Vararg{Int}}}, SparseMatrixCSC{T, Int}}}},
+    mwstates::Matrix{T},
+    mw::NTuple{N, Tuple{Vararg{Int}}}) where {N, T}
 
-    vecs_sector = Dict{NTuple{N, Tuple{Vararg{Int}}}, Array{Float64, N+2}}()
+    vecs_sector = Dict{NTuple{N, Tuple{Vararg{Int}}}, Array{T, N+2}}()
     mw_inmult, om = size(mwstates)
     vecs_sector[mw] = reshape(mwstates, mw_inmult, ntuple(_->1, N)..., om)
 
@@ -299,10 +325,10 @@ end
 
 # I: start from 1, increased by 1 for every recursion step.
 function get_vectors_sector_!(::Val{I},
-    vecs_sector::Dict{NTuple{N, Tuple{Vararg{Int}}}, Array{Float64, M}},
-    lops_blk::NTuple{N, Vector{Dict{NTuple{N, Tuple{Vararg{Int}}}, SparseMatrixCSC{Float64}}}},
+    vecs_sector::Dict{NTuple{N, Tuple{Vararg{Int}}}, Array{T, M}},
+    lops_blk::NTuple{N, Vector{Dict{NTuple{N, Tuple{Vararg{Int}}}, SparseMatrixCSC{T, Int}}}},
     ireps::NTuple{N, Irep},
-    mw::NTuple{N, Tuple{Vararg{Int}}}) where {I, N, M}
+    mw::NTuple{N, Tuple{Vararg{Int}}}) where {I, N, M, T}
 
     @assert M == N + 2
     lops = lops_blk[I]; irep = ireps[I]
@@ -336,7 +362,7 @@ function get_vectors_sector_!(::Val{I},
                                     sz_wtup = size(vecs_sector[wtup])
                                     new_size = [sz1, sz_wtup[2:I]..., w_mult, sz_wtup[I+2:end]...]
                                     for i=I+2:M-1 @assert new_size[i] == 1 end
-                                    vecs_sector[wt] = zeros(Float64, new_size...)
+                                    vecs_sector[wt] = zeros(T, new_size...)
                                 end
                                 # Fill vecs_sector
                                 init_idx = [[Colon() for _=1:I]..., j,
@@ -373,9 +399,9 @@ end
 tup_change_ith(::Val{I}, tup::NTuple{N, Tuple{Vararg{Int}}}, e::Tuple{Vararg{Int}}) where {N, I} = 
     tuple(tup[1:I-1]..., e, tup[I+1:end]...)
 
-function orthonormalize_outer_multiplicity!(basis::SparseMatrixCSC{Float64},
+function orthonormalize_outer_multiplicity!(basis::SparseMatrixCSC{T, Int},
     ranges::Vector{Tuple{Int, Int}};
-    atol::Float64=1e-12)
+    atol::Float64=1e-12) where {T}
 
     om = length(ranges)
     om <= 1 && return basis
@@ -383,7 +409,7 @@ function orthonormalize_outer_multiplicity!(basis::SparseMatrixCSC{Float64},
     dim = ranges[1][2] - ranges[1][1] + 1
     @assert all(last(r) - first(r) + 1 == dim for r in ranges)
 
-    gram = zeros(Float64, om, om)
+    gram = zeros(T, om, om)
     for i in 1:om
         sti, edi = ranges[i]
         block_i = basis[:, sti:edi]
@@ -391,16 +417,16 @@ function orthonormalize_outer_multiplicity!(basis::SparseMatrixCSC{Float64},
             stj, edj = ranges[j]
             inner = tr(Matrix(block_i' * basis[:, stj:edj])) / dim
             gram[i, j] = inner
-            gram[j, i] = inner
+            gram[j, i] = conj(inner)
         end
     end
     isapprox(gram, I; atol) && return basis
 
-    transform = inv(cholesky(Symmetric(gram)).U)
+    transform = inv(cholesky(Hermitian(gram)).U)
     old_blocks = [copy(basis[:, first(r):last(r)]) for r in ranges]
     for i in 1:om
         sti, edi = ranges[i]
-        new_block = spzeros(Float64, size(basis, 1), dim)
+        new_block = spzeros(T, size(basis, 1), dim)
         for j in 1:om
             new_block .+= old_blocks[j] .* transform[j, i]
         end
@@ -409,16 +435,16 @@ function orthonormalize_outer_multiplicity!(basis::SparseMatrixCSC{Float64},
     return basis
 end
 
-function get_mwstate(already_found::AbstractMatrix{Float64},
+function get_mwstate(already_found::AbstractMatrix{T},
     start_index::Int=1;
-    atol::Float64=1e-12)
+    atol::Float64=1e-12) where {T}
 
     inmult = size(already_found, 1)
     nvec_found = size(already_found, 2)
     start_index <= inmult || error("No independent maximal-weight state remains")
 
     for seed_idx in start_index:inmult
-        mwstate = zeros(Float64, inmult)
+        mwstate = zeros(T, inmult)
         mwstate[seed_idx] = 1.0
 
         for i in 1:nvec_found
@@ -433,8 +459,8 @@ function get_mwstate(already_found::AbstractMatrix{Float64},
 
         mwstate ./= mwstate_norm
         first_nzidx = findfirst(x -> abs(x) > atol, mwstate)
-        if first_nzidx !== nothing && mwstate[first_nzidx] < 0
-            mwstate .*= -1
+        if first_nzidx !== nothing
+            mwstate .*= conj(mwstate[first_nzidx]) / abs(mwstate[first_nzidx])
         end
         return mwstate, seed_idx + 1
     end
@@ -445,7 +471,7 @@ end
 function get_orthogonal_vecs(symm::NTuple{N, Any},
     qlabels::NTuple{N, Tuple{Vararg{Int}}},
     weight::NTuple{N, Tuple{Vararg{Int}}},
-    vecs::Array{Float64, M}) where {N, M}
+    vecs::Array{T, M}) where {N, M, T}
 
     @assert M == N + 2
     for i in 1:N
@@ -625,13 +651,13 @@ Returns a vector of `((out_qs, in_qs, qlabel), rmt)` pairs. `out_qs` and
 outer-multiplicity axes. Zero sector pairs are omitted.
 """
 function decompose_irop(symm::NTuple{N, Any},
-    irop::SparseArray{Float64, 3},
+    irop::SparseArray{T, 3},
     mult_ind::Dict{NTuple{N, Tuple{Vararg{Int}}}, Vector{Tuple{Int, Int}}},
-    qlabel::NTuple{N, Tuple{Vararg{Int}}}) where N
+    qlabel::NTuple{N, Tuple{Vararg{Int}}}) where {N, T}
 
     # println(mult_ind)
     CGT_om_size = 0
-    data = Vector{Tuple{NTuple{3, NTuple{N, Tuple{Vararg{Int}}}}, Array{Float64, N+3}}}()
+    data = Vector{Tuple{NTuple{3, NTuple{N, Tuple{Vararg{Int}}}}, Array{T, N+3}}}()
     sorted_qs = sort(collect(keys(mult_ind)); lt=rev_less_symms)
     for k1 in sorted_qs
         om1 = length(mult_ind[k1])
@@ -659,7 +685,7 @@ function decompose_irop(symm::NTuple{N, Any},
                         @assert norm(CGT) ≈ sqrt(CGT_om_size)
 
                         if isnothing(RMT) 
-                            RMT = zeros(Float64, om1, om2, 1, CGT_oms_vec...) 
+                            RMT = zeros(T, om1, om2, 1, CGT_oms_vec...)
                         end
                         RMT[i1, i2, 1, (Colon() for _=1:N)...] = 
                         reshape(reshape(CGT, :, CGT_om_size)' * block[:], CGT_oms_vec...)
@@ -693,53 +719,73 @@ Each component is replaced by `vecs' * irop[:, :, component] * vecs`. Entries
 whose magnitude is below `1e-12` are removed after the transformation. The
 function returns the same mutated `irop` object.
 """
-function transf_basis!(irop::SparseArray{Float64, 3}, 
-    vecs::SparseMatrixCSC{Float64})
+function transf_basis!(irop::SparseArray{T, 3},
+    vecs::SparseMatrixCSC{V, Int}) where {T, V}
     for i in 1:size(irop, 3)
         irop[:, :, i] = vecs' * irop[:, :, i] * vecs
     end
     droptol!(irop, 1e-12)
 end
 
-function droptol!(sparr::SparseArray{Float64, N}, tol::Float64) where N
+function droptol!(sparr::SparseArray{T, N}, tol::Float64) where {N, T}
     keys_to_drop = [k for (k, v) in nonzero_pairs(sparr) if abs(v) < tol]
     for k in keys_to_drop sparr[k] = 0.0 end
 end
 
 
+"""
+    getweight_irop(S, z_ops, lowering_ops, mwirop)
+
+Infer integer operator weights using the largest absolute matrix entry, then
+validate every full commutator. Zero or mixed-weight operators raise
+`ArgumentError`; small imaginary and nonintegral residuals must be below 1e-12.
+"""
 function getweight_irop(::Type{S},
     z_ops::Vector{<:Tuple{Vararg{Int}}},
-    lowering_ops::Vector{<:AbstractMatrix{<:Real}},
-    mwirop::AbstractMatrix{<:Real}) where S<:Symmetry
-
-    # Get the qlabel of the maximal weight operator in the multiplet that mwirop belongs to
-    NZ = nzops(S); @assert NZ == length(z_ops[1])
-    nzidx = findfirst(!=(0), mwirop)
-    zops_diags = [[z_ops[i][j] for i=1:length(z_ops)] for j=1:NZ]
-    zops = [diagm(zops_diags[j]) for j=1:NZ]
-    comm_result = [comm(zops[j], mwirop) for j=1:NZ]
-    zvals = Tuple(round(Int, comm_result[i][nzidx] / mwirop[nzidx]) for i=1:NZ)
-    for i=1:NZ @assert comm_result[i] ≈ zvals[i] * mwirop end
-    return zvals
+    lowering_ops::Vector{<:AbstractMatrix{<:Number}},
+    mwirop::AbstractMatrix{<:Number}) where S<:Symmetry
+    NZ = nzops(S)
+    all(isfinite, mwirop) || throw(ArgumentError("IROP contains nonfinite entries"))
+    nzidx = argmax(abs.(mwirop))
+    iszero(mwirop[nzidx]) && throw(ArgumentError("Cannot infer the weight of a zero IROP"))
+    return ntuple(NZ) do j
+        Z = Diagonal([w[j] for w in z_ops])
+        residual = comm(Z, mwirop)
+        ratio = residual[nzidx] / mwirop[nzidx]
+        value = real(ratio)
+        isfinite(ratio) && abs(imag(ratio)) < 1e-12 &&
+            abs(value - round(value)) < 1e-12 && typemin(Int) <= value < -float(typemin(Int)) ||
+            throw(ArgumentError("IROP weight for component $j is not a representable integer: $ratio"))
+        q = round(Int, value)
+        norm(residual - q * mwirop) <= 1e-12 ||
+            throw(ArgumentError("IROP does not have a definite weight for component $j"))
+        q
+    end
 end
 
-function get_irops_sector(ireps::NTuple{N, Irep},
-    lowering_ops::NTuple{N, Vector{<:AbstractMatrix{<:Real}}},
-    mwirop::AbstractMatrix{<:Real},
-    mw::NTuple{N, Tuple{Vararg{Int}}}) where N
+"""
+    get_irops_sector(ireps, lowering_ops, mwirop, mw)
 
-    irops_sector = Dict{NTuple{N, Tuple{Vararg{Int}}}, Array{SparseMatrixCSC{Float64}, N}}()
-    irops_sector[mw] = reshape([sparse(Float64.(mwirop))], ntuple((_->1, N)...))
+Generate weight-resolved operator components without changing the seed phase.
+"""
+
+function get_irops_sector(ireps::NTuple{N, Irep},
+    lowering_ops::NTuple{N, Vector{<:AbstractMatrix{<:Number}}},
+    mwirop::AbstractMatrix{T},
+    mw::NTuple{N, Tuple{Vararg{Int}}}) where {N, T}
+
+    irops_sector = Dict{NTuple{N, Tuple{Vararg{Int}}}, Array{SparseMatrixCSC{T, Int}, N}}()
+    irops_sector[mw] = reshape([sparse(T.(mwirop))], ntuple((_->1, N)...))
 
     get_irops_sector_!(Val(1), irops_sector, lowering_ops, ireps, mw)
     return irops_sector
 end
 
 function get_irops_sector_!(::Val{I},
-    irops_sector::Dict{NTuple{N, Tuple{Vararg{Int}}}, Array{SparseMatrixCSC{Float64}, N}},
-    lowering_ops::NTuple{N, Vector{<:AbstractMatrix{<:Real}}},
+    irops_sector::Dict{NTuple{N, Tuple{Vararg{Int}}}, Array{SparseMatrixCSC{T, Int}, N}},
+    lowering_ops::NTuple{N, Vector{<:AbstractMatrix{<:Number}}},
     ireps::NTuple{N, Irep},
-    mw::NTuple{N, Tuple{Vararg{Int}}}) where {I, N}
+    mw::NTuple{N, Tuple{Vararg{Int}}}) where {I, N, T}
 
     lops = lowering_ops[I]; irep = ireps[I]
     S, qlabel = symm(irep), irep.qlabel
@@ -771,7 +817,7 @@ function get_irops_sector_!(::Val{I},
                                     sz_wtup = size(irops_sector[wtup])
                                     new_size = [sz_wtup[1:I-1]..., w_mult, sz_wtup[I+1:end]...]
                                     for i=I+1:N @assert new_size[i] == 1 end
-                                    irops_sector[wt] = Array{SparseMatrixCSC{Float64}, N}(undef, new_size...)
+                                    irops_sector[wt] = Array{SparseMatrixCSC{T, Int}, N}(undef, new_size...)
                                 end
                                 if N == 1
                                     comm_res = comm(lop, irops_sector[wtup][j])
@@ -827,8 +873,22 @@ operators, and orthogonalizes their component basis. It returns the sparse
 """
 function get_IROP(symm::NTuple{N, Any},
     z_ops::NTuple{N, Vector{<:Tuple{Vararg{Int}}}},
-    lowering_ops::NTuple{N, Vector{<:AbstractMatrix{<:Real}}},
-    mwirop::AbstractMatrix{<:Real}) where N
+    lowering_ops::NTuple{N, Vector{<:AbstractMatrix{<:Number}}},
+    mwirop::AbstractMatrix{<:Number}) where N
+    T = _local_payload_type(lowering_ops, eltype(mwirop))
+    lops = ntuple(i -> SparseMatrixCSC{T, Int}[sparse(T.(op)) for op in lowering_ops[i]], N)
+    return _get_IROP(T, symm, z_ops, lops, sparse(T.(mwirop)))
+end
+
+"""
+    _get_IROP(T, symm, z_ops, lowering_ops, mwirop)
+
+Construct an IROP after promoting all physical operators to scalar type `T`.
+"""
+function _get_IROP(::Type{T}, symm::NTuple{N, Any},
+    z_ops::NTuple{N, Vector{<:Tuple{Vararg{Int}}}},
+    lowering_ops::NTuple{N, Vector{<:AbstractMatrix{<:Number}}},
+    mwirop::AbstractMatrix{<:Number}) where {N, T}
 
     #println(symm)
     #for ls in lowering_ops for lop in ls display(Matrix(lop)) end end
@@ -838,11 +898,11 @@ function get_IROP(symm::NTuple{N, Any},
     spdim = length(z_ops[1])
     # First, get the weight of maximal weight operator
     # Then, apply the lowering operators to get the weights of all operators in the multiplet
-    mw = Tuple(getweight_irop(symm[i], z_ops[i], lowering_ops[i], mwirop) for i in 1:N)
-    qlabels_out = Tuple(getqlabel(symm[i], mw[i]) for i in 1:N)
-    output_ireps = ntuple(i->getNsave_irep(symm[i], BigInt, qlabels_out[i]), N)
-    norm2_mwirop = dot(mwirop, mwirop)
-    nirop = prod(dimension(output_ireps[i]) for i=1:N)
+    mw = ntuple(i -> getweight_irop(symm[i], z_ops[i], lowering_ops[i], mwirop)::Tuple{Vararg{Int}}, N)
+    qlabels_out = ntuple(i -> getqlabel(symm[i], mw[i])::Tuple{Vararg{Int}}, N)
+    output_ireps = ntuple(i->getNsave_irep(symm[i], BigInt, qlabels_out[i])::Irep, N)
+    norm2_mwirop = real(dot(mwirop, mwirop))
+    nirop = prod(dimension(output_ireps[i]) for i=1:N)::Int
         
     # println(qlabels_out)
     # println("Norm^2 of the maximal weight operator: ", norm2_mwirop)
@@ -851,7 +911,7 @@ function get_IROP(symm::NTuple{N, Any},
 
     # Orthogonalize and normalize so that every operator has norm equal to mwirop
     # Check orthogonality and proper normalization
-    irops_3d = SparseArray(zeros(Float64, spdim, spdim, nirop))
+    irops_3d = SparseArray(zeros(T, spdim, spdim, nirop))
 
     # First, fill in irops_3d with the obtained irops
     for (w, irop_arr) in irops
@@ -859,7 +919,7 @@ function get_IROP(symm::NTuple{N, Any},
     end
 
     # Second, orthogonalize and normalize the irops, and fill in irops_3d_ortho
-    outputmats = [cgt_outputmat(getNsave_irep(symm[i], BigInt, qlabels_out[i]), Float64) for i=1:N]
+    outputmats = SparseArray{Float64,2}[cgt_outputmat(irep, Float64) for irep in output_ireps]
     outputmat = SparseArray(reduce(⊗, outputmats))
 
     multiplied = reshape(irops_3d, spdim^2, nirop) * outputmat
@@ -874,5 +934,5 @@ function get_IROP(symm::NTuple{N, Any},
     end
 
     # Return 3d array of dim (local dim, local dim, # of irop ops)
-    return irops_3d_ortho, qlabels_out
+    return irops_3d_ortho::SparseArray{T,3}, qlabels_out
 end

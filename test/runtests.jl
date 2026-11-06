@@ -95,6 +95,26 @@ end
     irop, qlabel = get_IROP(symm, weights, lowering_ops, mwirop)
     @test qlabel == ((2,),)
     @test size(irop) == (3, 3, 3)
+
+    # Diagonal phase rotations retain z weights but require complex state bases.
+    R = Diagonal(ComplexF64[1, im, exp(0.3im)])
+    complex_lowering = ([R * lowering_ops[1][1] * R'],)
+    basis, sectors = decompose_space(symm, weights, complex_lowering)
+    @test eltype(basis) == ComplexF64
+    @test basis' * basis ≈ I
+    seed = im * R * mwirop * R'
+    complex_irop, complex_q = get_IROP(symm, weights, complex_lowering, seed)
+    @test complex_q == qlabel
+    @test Array(complex_irop)[:,:,1] ≈ seed
+    transf_basis!(complex_irop, basis)
+    blocks = decompose_irop(symm, complex_irop, sectors, complex_q)
+    @test !isempty(blocks)
+    @test all(eltype(last(block)) == ComplexF64 for block in blocks)
+    @test any(any(!iszero, imag.(last(block))) for block in blocks)
+    # A real state basis must also accept a complex operator seed.
+    mixed_irop, _ = get_IROP(symm, weights, lowering_ops, im * mwirop)
+    transf_basis!(mixed_irop, ortho_vecs)
+    @test Array(mixed_irop)[:,:,1] ≈ ortho_vecs' * (im * mwirop) * ortho_vecs
 end
 
 @testset "SQLite environment overrides" begin
