@@ -219,6 +219,7 @@ function generate_every_CGT(::Type{S}, ::Type{RT}, ::Type{CT},
 end
 
 
+# Overall structure is similar to generate_every_CGT function
 """
     omlookup(::Type{S}, ::Type{RT}, q1, q2; verbose=0)
 
@@ -231,7 +232,6 @@ multiplicities in the product representation, repeatedly subtracts complete
 output irreps from the highest remaining weights, then saves both `OMList`
 entries and the `ValidOuts` record for this pair.
 """
-# Overall structure is similar to generate_every_CGT function
 function omlookup(::Type{S}, ::Type{RT},
     q1::NTuple{NZ, Int},
     q2::NTuple{NZ, Int};
@@ -702,6 +702,8 @@ end
 ⊗(a::AbstractMatrix, b::AbstractMatrix) = kron(b, a)
 ⊗(a::AbstractVector, b::AbstractVector) = kron(b, a)
 
+# divide vector by common factor (gcd) of nonzero elements
+# so that nonzero elements of input vector become relative prime each other
 """
     divcfac(v::SparseVector{<:Integer})
     divcfac(v::Vector{<:Integer})
@@ -712,8 +714,6 @@ The return value is `(cfac, reduced_v)`. A zero vector returns factor `1` and
 the original vector. This keeps exact Clebsch vectors primitive and reduces
 integer growth during basis construction.
 """
-# divide vector by common factor (gcd) of nonzero elements
-# so that nonzero elements of input vector become relative prime each other
 function divcfac(v::SparseVector{<:Integer}) 
 	if iszero(v) return 1, v end
 	cfac = gcd(v.nzval)

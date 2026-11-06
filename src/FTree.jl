@@ -147,6 +147,8 @@ function create_FTree(::Type{S},
     return FTree{S, N, NZ, M1, M2}(ins, outs, coeff, coeff_nfac)
 end
 
+# Generate a random linear combination of fusion trees
+# This function is used for testing purposes
 """
     random_FTree(::Type{S}, ins, outs; onearr=false) -> FTree
 
@@ -156,8 +158,6 @@ Generate a random exact fusion-tree coefficient object for tests.
 arrays are filled with random `Int8` values, or all ones when `onearr=true`.
 The OM-list shape is loaded and validated before construction.
 """
-# Generate a random linear combination of fusion trees
-# This function is used for testing purposes
 function random_FTree(::Type{S}, 
     ins::NTuple{N, NTuple{NZ, Int}},
     outs::NTuple{1, NTuple{NZ, Int}};
@@ -179,6 +179,7 @@ function random_FTree(::Type{S},
     return create_FTree(S, ins, outs, coeff, coeff_nfac, true)
 end
 
+# Decompose a permutation into adjacent transpositions
 """
     decompose_perm(perm::Tuple) -> Vector{Tuple{Int,Int}}
 
@@ -188,7 +189,6 @@ Decompose a permutation into adjacent swaps.
 contains adjacent transpositions `(i, i + 1)` that, applied in order, transform
 the identity ordering into `perm`.
 """
-# Decompose a permutation into adjacent transpositions
 function decompose_perm(perm::Tuple)
     len = length(perm)
     vec = collect(1:len)
@@ -208,6 +208,8 @@ function decompose_perm(perm::Tuple)
     end
 end
 
+# FTree in the argument is modified in place
+# However, the resulting FTree is different from the original one
 """
     permute!(ftree::FTree, perm; verbose=0) -> FTree
 
@@ -218,8 +220,6 @@ decomposes it into adjacent swaps and applies `permute_adjacent!` repeatedly.
 The input coefficient dictionaries may be mutated during intermediate R-symbol
 application, and the returned `FTree` represents the permuted fusion basis.
 """
-# FTree in the argument is modified in place
-# However, the resulting FTree is different from the original one
 function Base.permute!(FTree::FTree{S, N}, perm::NTuple{N, Int};
     verbose=0) where {S<:NonabelianSymm, N}
 
@@ -295,6 +295,7 @@ function fsymiofunc_perm_step1(FTree::FTree{S, N},
     return in1, in2, in3, outsp
 end
 
+# rsym input/output function used in permutation step of step 1
 """
     rsymiofunc_perm_step1(ftree, intermsp, i) -> (in1, in2, rout)
 
@@ -306,7 +307,6 @@ position being braided. The return value `(in1, in2, rout)` identifies the
 local channel `in1 ⊗ in2 -> rout` whose R-symbol acts on the `i`th
 outer-multiplicity axis.
 """
-# rsym input/output function used in permutation step of step 1
 function rsymiofunc_perm_step1(FTree::FTree{S, NI},
     intermsp::NTuple{M1, NTuple{NZ, Int}},
     i::Int) where {S<:NonabelianSymm, NI, M1, NZ}
@@ -318,6 +318,7 @@ function rsymiofunc_perm_step1(FTree::FTree{S, NI},
 end
 
 
+# Apply R-symbol to the i-th CG3 in AbstractCG3contract type
 """
     apply_Rsymbol!(CG3cont, i::Int, rsymiofunc; verbose=0) -> nothing
 
@@ -333,7 +334,6 @@ For those blocks, the coefficient array is contracted along axis `i` with the
 right-normalized R-symbol matrix; the integer array and rational factor are then
 reduced with `arr_relprime`. The container's dictionaries are mutated in place.
 """
-# Apply R-symbol to the i-th CG3 in AbstractCG3contract type
 function apply_Rsymbol!(CG3cont::AbstractCG3contract{S, NI, NO, NZ},
     i::Int,
     rsymiofunc::Function; 
@@ -406,6 +406,8 @@ Return coefficient dictionary dimensions for an `FTree` type.
 """
 get_dict_param(::Type{<:FTree{S, N}}) where {S<:NonabelianSymm, N} = (N - 2, N - 1) 
 
+# Apply F-symbol to change the ith intermediate space
+# For fusion tree, it is applied to the i-th and (i+1)-th CG3s of the fusion tree
 """
     apply_Fsymbol(CG3cont, new_ins, new_outs, i, backward, fsymiofunc; verbose=0, permute_updown=false)
 
@@ -427,8 +429,6 @@ the selected normalized F-symbol matrix, splits the result back into
 intermediate-space blocks, removes common integer factors, and returns a new
 container via `create_CG3cont`.
 """
-# Apply F-symbol to change the ith intermediate space
-# For fusion tree, it is applied to the i-th and (i+1)-th CG3s of the fusion tree
 function apply_Fsymbol(CG3cont::AbstractCG3contract{S, NI, NO, NZ}, 
     new_ins::NTuple{NI, NTuple{NZ, Int}},
     new_outs::NTuple{NO, NTuple{NZ, Int}},

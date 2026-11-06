@@ -182,6 +182,7 @@ function getdefirep(::Type{S}, ::Type{RT}) where {S<:NonabelianSymm, RT<:Number}
 	return Irep(S, RT, Sl, Sz, inner_prod, inv_innerprod, dim)
 end
 
+# Get trivial (1-dimensional) representation
 """
     gettrivirep(::Type{S}, ::Type{RT}) -> Irep
 
@@ -190,7 +191,6 @@ Construct the one-dimensional trivial representation of `S`.
 The lowering-operator tuple and zero z-sector dictionary come from
 `getsl_triv` and `getsz_triv`, and all metric blocks are identity blocks.
 """
-# Get trivial (1-dimensional) representation
 function gettrivirep(::Type{S}, ::Type{RT}) where {S<:NonabelianSymm, RT<:Number}
     Sl = getsl_triv(S, RT); Sz = getsz_triv(S)
     inner_prod = get_identity_innerprod(S, RT, Sz)

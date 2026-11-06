@@ -51,6 +51,8 @@ function orthog_2vecs(v1::AbstractVector, v2::AbstractVector, v1normsq, inprod)
     return p, q, r, v
 end
 
+# mat: Matrix, inner product matrix or its inverse.
+# arr: N-dimensional array. Ith index of arr and 1st index of mat is contracted.
 """
     contract_ith(arr::Array{CT,N}, mat::AbstractMatrix{RT}, ::Val{I})
 
@@ -60,8 +62,6 @@ Contract matrix `mat` into axis `I` of `arr`.
 its first index contracted against axis `I`, replacing that axis by the matrix's
 second index. `Val{I}` keeps the generated tensor expression type-stable.
 """
-# mat: Matrix, inner product matrix or its inverse.
-# arr: N-dimensional array. Ith index of arr and 1st index of mat is contracted.
 @generated function contract_ith(arr::Array{CT, N}, 
     mat::AbstractMatrix{RT}, 
     ::Val{I}) where {RT<:Number, CT<:Number, N, I}

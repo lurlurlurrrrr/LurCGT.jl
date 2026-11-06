@@ -17,14 +17,15 @@ isSUN(::Any) = false
 # text expression of the symmetry. Needed to construct file/folder name
 totxt(::Type{SU{N}}) where N = "SU$(N)"
 
+# dimension of defining irep
 """
     defirepdim(::Type{SU{N}}) -> Int
 
 Return the dimension of the defining vector representation.
 """
-# dimension of defining irep
 defirepdim(::Type{SU{N}}) where N = N
 
+# number of raising operators (for SU(N), it is N - 1)
 """
     nlops(::Type{SU{N}}) -> Int
     nzops(::Type{SU{N}}) -> Int
@@ -35,7 +36,6 @@ Both counts equal the SU(N) rank `N - 1`. These values determine qlabel tuple
 lengths, tableau weight lengths, and the number of sparse lowering-operator
 dictionaries stored in an `Irep`.
 """
-# number of raising operators (for SU(N), it is N - 1)
 nlops(::Type{SU{N}}) where N = N - 1
 
 # number of z-operators (for SU(N), it is N - 1)
@@ -100,6 +100,7 @@ end
 getsz_def(::Type{SU{N}}) where N = Dict(Tuple(getsz_def(SU{N}, i)) => (i, i) for i=1:N)
 getsz_def_vec(::Type{SU{N}}) where N = [collect(getsz_def(SU{N}, i)) for i=1:N]
 
+# Change of z-values when lowering operator is applied.
 """
     getdz(::Type{SU{N}}, lop::Int) -> NTuple{N-1, Int}
 
@@ -108,7 +109,6 @@ Return the z-weight change produced by simple lowering operator `lop`.
 `lop` is in `1:nlops(SU{N})`. The value is the difference between adjacent
 defining-representation weights and is used to move between irrep sectors.
 """
-# Change of z-values when lowering operator is applied.
 function getdz(::Type{SU{N}}, lop::Int) where N
 	sz = getsz_def(SU{N})
 	zvals = sorted_zvals(sz)
@@ -117,6 +117,7 @@ end
 
 crystal_chars_map(::Type{SU{N}}) where N = Dict(i => i for i=1:N)
 
+# This function should be modified
 """
     mw_column(::Type{<:SU}, l::Int) -> Vector{Int}
 
@@ -125,7 +126,6 @@ Return the canonical maximal-weight tableau column of height `l`.
 The returned characters descend from `l` to `1` and are used when translating
 qlabels into tableau shapes.
 """
-# This function should be modified
 mw_column(::Type{<:SU}, l::Int) = collect(l:-1:1)
 
 getdzs(::Type{SU{N}}) where N = [collect(getdz(SU{N}, i)) for i=1:nlops(SU{N})]
@@ -199,6 +199,7 @@ maxalt(::Type{SU{N}}) where N = N - 1
 
 ytnrows(::Type{SU{N}}) where N = N
 
+# Weight comparision, inputs are a form of shape of the Young tableau
 """
     less_weight(::Type{SU{N}}, w1::NTuple{N-1, Int}, w2::NTuple{N-1, Int}) -> Bool
 
@@ -207,7 +208,6 @@ Order two SU(N) weight tuples for deterministic sector traversal.
 `w1` and `w2` are compared lexicographically after reversing coordinate order,
 matching the tableau-weight convention used elsewhere in the package.
 """
-# Weight comparision, inputs are a form of shape of the Young tableau
 function less_weight(::Type{SU{N}}, w1::NTuple{NZ, Int}, w2::NTuple{NZ, Int}) where {N, NZ}
 	@assert NZ == N - 1
 	return reverse(w1) < reverse(w2)

@@ -66,6 +66,7 @@ function getsl_def(::Type{SO{N}}, ::Type{RT}) where {N, RT<:Number}
     return def_sl
 end
 
+# We need to consider spin representation, so weights are multiplied by 2
 """
     getsz_def_vec_(::Type{SO{N}}) -> Vector{NTuple{div(N,2), Int}}
 
@@ -75,7 +76,6 @@ SO(N) spin representations require half-integral weights. This code stores all
 SO(N) z-weights multiplied by two, so defining-vector weights are `+/-2` on one
 coordinate, with an additional zero weight for odd `N`.
 """
-# We need to consider spin representation, so weights are multiplied by 2
 function getsz_def_vec_(::Type{SO{N}}) where N 
     szs = Vector{NTuple{div(N, 2), Int}}()
     for i in 1:N
@@ -128,6 +128,7 @@ function crystal_chars_map(::Type{SO{N}}) where N
     return charmap
 end
 
+# This function should be modified
 """
     mw_column(::Type{<:SO{N}}, l::Int, aux::Bool) -> Vector{Int}
 
@@ -137,7 +138,6 @@ Return a maximal-weight tableau column for SO(N).
 even SO(N) spinor-related conventions; when it applies, the top character is
 negated to distinguish the auxiliary column.
 """
-# This function should be modified
 function mw_column(::Type{<:SO{N}}, l::Int, aux::Bool) where N
     col = collect(l:-1:1)
     if aux && l == div(N, 2) col[1] = -col[1] end
@@ -161,6 +161,7 @@ function charlist(::Type{SO{N}}) where N
     return lst
 end
 
+# f-operations defined for crystal of Tableau
 """
     get_fops_std(::Type{SO{N}}) -> Vector{Dict{Int, Int}}
 
@@ -170,7 +171,6 @@ Each dictionary describes one simple lowering operator. The last dictionary is
 parity dependent: odd SO(N) lowers through the zero character, while even SO(N)
 uses the two terminal vector characters.
 """
-# f-operations defined for crystal of Tableau
 function get_fops_std(::Type{SO{N}}) where N
     fops = Vector{Dict{Int, Int}}()
     NZ = div(N, 2); Nodd = (N % 2 == 1)
@@ -290,6 +290,7 @@ end
 get_auxarg(::Type{SO{N}}, qlabel::NTuple{NZ, Int}) where {N, NZ} = 
     N % 2 == 0 && qlabel[NZ-1] < qlabel[NZ]
 
+# Weight comparision, inputs are a form of shape of the Young tableau
 """
     less_weight(::Type{SO{N}}, w1::NTuple{div(N,2), Int}, w2::NTuple{div(N,2), Int}) -> Bool
 
@@ -298,7 +299,6 @@ Order SO(N) weight tuples for deterministic sector traversal.
 `w1` and `w2` are compared lexicographically after reversing coordinate order,
 matching the package's tableau-shape convention.
 """
-# Weight comparision, inputs are a form of shape of the Young tableau
 function less_weight(::Type{SO{N}}, w1::NTuple{NZ, Int}, w2::NTuple{NZ, Int}) where {N, NZ}
 	@assert NZ == div(N, 2)
 	return reverse(w1) < reverse(w2)

@@ -195,6 +195,8 @@ function conjugate!(::Type{S},
     end
 end
 
+# di: Dropped index, 3 when getting mw part for outgoing leg
+# inNout: Tuple (in1, in2, out)
 """
     mwpartof(::Type{S}, blks, inNout, di=3)
 
@@ -205,8 +207,6 @@ three qlabels `(in1, in2, out)` and `di` selects which leg's maximal-weight
 sector is required, usually `3` for the outgoing leg. The returned dictionary
 drops that zlabel from the key and drops the corresponding singleton array axis.
 """
-# di: Dropped index, 3 when getting mw part for outgoing leg
-# inNout: Tuple (in1, in2, out)
 function mwpartof(::Type{S}, 
     blks::Dict{NTuple{3, NTuple{NZ, Int}}, Array{CT}}, 
     inNout::NTuple{3, NTuple{NZ, Int}},
@@ -227,6 +227,7 @@ function mwpartof(::Type{S},
     return mw_blk
 end
 
+# 3rd dimension of blk1 and 1st dimension of blk2_mw are contracted
 """
     contractblks_mw(::Type{S}, blks1, blks2_mw, es; verbose=0)
 
@@ -238,7 +239,6 @@ maximal-weight extraction. If `es=true`, the contraction represents
 intermediate z-weights are found by sorted-key traversal, and equal output keys
 are accumulated.
 """
-# 3rd dimension of blk1 and 1st dimension of blk2_mw are contracted
 function contractblks_mw(::Type{S},
     blks1::Dict{NTuple{3, NTuple{NZ, Int}}, Array{CT}}, 
     blks2_mw::Dict{NTuple{2, NTuple{NZ, Int}}, Array{CT, 3}}, 
@@ -325,6 +325,10 @@ function contract_blks(blk1::Array{CT, 4},
     return result
 end
 
+# return type: a dictionary
+# Its keys are the qlabels, and its values are tuples of multiplicities
+# values are (a, b), where a is the multiplicity in in1 ⊗ in2 -> e
+# b is the multiplicity in e ⊗ in3 -> out
 """
     find_espaces(::Type{S}, in1, in2, in3, out, ::Type{CT}; verbose=0)
 
@@ -334,10 +338,6 @@ The function considers `in1 x in2 -> e` and `e x in3 -> out`. For every
 admissible `e`, it returns `(e, (qin3_om, in12_om))`, where the tuple contains
 the outer multiplicity of `e x in3 -> out` and `in1 x in2 -> e`.
 """
-# return type: a dictionary
-# Its keys are the qlabels, and its values are tuples of multiplicities
-# values are (a, b), where a is the multiplicity in in1 ⊗ in2 -> e
-# b is the multiplicity in e ⊗ in3 -> out
 function find_espaces(::Type{S},
     in1::NTuple{NZ, Int},
     in2::NTuple{NZ, Int},

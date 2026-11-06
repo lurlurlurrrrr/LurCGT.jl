@@ -7,6 +7,7 @@ Used by local-space construction checks for lowering and Cartan operators.
 """
 comm(A, B) = A * B - B * A
 
+# i, j: To assert that weights are valid
 """
     toblk(symm, mat, weight_zips, omvec, nthweight, i, j)
 
@@ -20,7 +21,6 @@ weight. `i` selects the symmetry factor and `j` the lowering operator inside
 that factor. The return dictionary is keyed by source weight and stores the
 corresponding lowering block.
 """
-# i, j: To assert that weights are valid
 function toblk(symm::NTuple{N, Any},
     mat::SparseArray{Float64, 2},
     weight_zips::Vector{NTuple{N, Tuple{Vararg{Int}}}},

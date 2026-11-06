@@ -124,6 +124,7 @@ function crystal_chars_map(::Type{Sp{N}}) where N
     return charmap
 end
 
+# This function should be modified
 """
     mw_column(::Type{<:Sp}, l::Int) -> Vector{Int}
 
@@ -132,7 +133,6 @@ Return the canonical maximal-weight tableau column of height `l`.
 The column characters descend from `l` to `1`, matching the symplectic tableau
 convention used to seed crystal generation.
 """
-# This function should be modified
 mw_column(::Type{<:Sp}, l::Int) = collect(l:-1:1)
 
 getdzs(::Type{Sp{N}}) where N = [collect(getdz(Sp{N}, i)) for i=1:nlops(Sp{N})]
@@ -147,6 +147,7 @@ descending absolute value.
 """
 charlist(::Type{Sp{N}}) where N = vcat(collect(1:div(N, 2)), collect(-div(N, 2):-1))
 
+# f-operations defined for crystal of tableau
 """
     get_fops_std(::Type{Sp{N}}) -> Vector{Dict{Int, Int}}
 
@@ -156,7 +157,6 @@ For non-terminal simple roots, the map lowers both positive and mirrored
 negative characters. The final simple root maps the terminal positive character
 to its negative partner.
 """
-# f-operations defined for crystal of tableau
 function get_fops_std(::Type{Sp{N}}) where N
     fops = Vector{Dict{Int, Int}}()
     for i in 1:div(N, 2)
@@ -208,6 +208,7 @@ function getqlabel(::Type{Sp{N}}, z::NTuple{NZ, Int}) where {N, NZ}
     return Tuple(w)
 end 
 
+# Weight comparision, inputs are a form of shape of the Young tableau
 """
     less_weight(::Type{Sp{N}}, w1::NTuple{div(N,2), Int}, w2::NTuple{div(N,2), Int}) -> Bool
 
@@ -216,7 +217,6 @@ Order Sp(N) weight tuples for deterministic sector traversal.
 The comparison reverses coordinate order before lexicographic comparison,
 matching the tableau-shape convention.
 """
-# Weight comparision, inputs are a form of shape of the Young tableau
 function less_weight(::Type{Sp{N}}, w1::NTuple{NZ, Int}, w2::NTuple{NZ, Int}) where {N, NZ}
 	@assert NZ == div(N, 2)
 	return reverse(w1) < reverse(w2)

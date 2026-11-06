@@ -296,6 +296,8 @@ function detect_1j(::Type{S},
     return false
 end
 
+# Get X-symbol from given space configuration
+# TODO: Consider two 1j-symbols are contracted
 """
     getNsave_Xsymbol_zeroadded(::Type{S}, up1sp, dn1sp, up2sp, dn2sp, ctlegs1, ctlegs2; verbose, use1j, save)
 
@@ -305,8 +307,6 @@ Inputs are assumed to have zero prefixes removed and contracted legs
 renumbered. The function checks SQLite first and delegates to
 `computeNsave_Xsymbol_zeroadded` on a miss.
 """
-# Get X-symbol from given space configuration
-# TODO: Consider two 1j-symbols are contracted
 function getNsave_Xsymbol_zeroadded(::Type{S},
     up1sp::NTuple{U1, NTuple{NZ, Int}},
     dn1sp::NTuple{D1, NTuple{NZ, Int}},
@@ -547,6 +547,7 @@ function fill_FTrees!(CGT_FTrees::Dict{NTuple{NZ, Int}, Vector{FTree{S, N, NZ}}}
     for ii in 1:om CGT_FTrees[csp][ii] = create_unit_FTree(omlist, ii) end
 end
 
+# ci: contracted legs indices
 """
     preprocess_FTrees(FTree_dict, ci) -> (FTrees, add_zero_count)
 
@@ -558,7 +559,6 @@ right, singleton dimensions are added when all or none of the legs are
 contracted, and F-symbols separate the contracted subtree. The second return
 value records whether a zero/trivial input leg was added.
 """
-# ci: contracted legs indices
 function preprocess_FTrees(FTree_dict::Dict{NTuple{NZ, Int}, Vector{FTree{S, N, NZ}}},
     ci::NTuple{M, Int}) where {S<:NonabelianSymm, N, M, NZ}
 
@@ -587,6 +587,8 @@ end
 const Dict_s1res{S, NI, NO, NZ, Mn} = Dict{Tuple{NTuple{NZ, Int}, NTuple{NZ, Int}}, 
                                        Matrix{Step1_result{S, NI, NO, NZ, Mn}}}
 
+# rontop == true : apply R-symbol to the top CG3 (index 1)
+# rontop == false: apply R-symbol to the bottom-side CG3 
 """
     combine_FTrees(FTreesup, FTreesdn, rontop, ::Val{M})
 
@@ -598,8 +600,6 @@ spaces and OM indices, the corresponding trees are combined, an R-symbol is
 applied at the top or bottom according to `rontop`, and a `Step1_result` matrix
 is stored.
 """
-# rontop == true : apply R-symbol to the top CG3 (index 1)
-# rontop == false: apply R-symbol to the bottom-side CG3 
 function combine_FTrees(FTreesup::Dict{NTuple{NZ, Int}, Vector{FTree{S, N1, NZ}}},
     FTreesdn::Dict{NTuple{NZ, Int}, Vector{FTree{S, N2, NZ}}},
     rontop::Bool,
@@ -1070,6 +1070,7 @@ function contN2canonical(
     return step3_res
 end
 
+# Do the second step of the X-symbol calculation
 """
     do_step2(s1up::Step1_result, s1dn::Step1_result; verbose=0)
 
@@ -1080,7 +1081,6 @@ coefficient blocks are grouped by their external/intermediate qlabels,
 contracted with cached four-CG3 reductions, combined with rational
 normalization factors, and accumulated into a `Step2_result`.
 """
-# Do the second step of the X-symbol calculation
 function do_step2(s1up::Step1_result{S, NIU, NOU, NZ}, 
     s1dn::Step1_result{S, NID, NOD, NZ}; 
     verbose=0) where {S<:NonabelianSymm, NIU, NOU, NID, NOD, NZ}
@@ -1175,6 +1175,7 @@ function do_step2(s1up::Step1_result{S, NIU, NOU, NZ},
     return step2_result, NID, NOU
 end
 
+# upper step1_result * lower step1_result * fourCG3s result
 """
     final_contract_step2(arr1, arr2, fourCG3s_arr, Val(NIU), Val(NOU), Val(NID), Val(NOD))
 
@@ -1185,7 +1186,6 @@ contains the exact six-axis reduction of the four-CG3 core. The `Val`
 parameters encode input/output leg counts so the generated `@tensor` expression
 has statically known index structure.
 """
-# upper step1_result * lower step1_result * fourCG3s result
 @generated function final_contract_step2(
     arr1::Array{BigInt, MU}, 
     arr2::Array{BigInt, MD}, 

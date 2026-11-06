@@ -36,6 +36,7 @@ struct CG3Flip{S<:NonabelianSymm, CT, NZ}
     end
 end
 
+# Obtain the CG3Flip object by contracting CG3 with 1j-symbol
 """
     getNsave_cg3flip(::Type{S}, ::Type{RT}, ::Type{CT}, incom_spaces, out_space; verbose=0) -> CG3Flip
 
@@ -50,7 +51,6 @@ block for `in2`, loads the target CG3 `(out_space, dual(in2)) -> in1`,
 contracts maximal-weight blocks, stores original and new normalization factors,
 saves the transform, and returns it.
 """
-# Obtain the CG3Flip object by contracting CG3 with 1j-symbol
 function getNsave_cg3flip(::Type{S},
     ::Type{RT},
     ::Type{CT},

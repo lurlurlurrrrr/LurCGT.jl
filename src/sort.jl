@@ -68,6 +68,8 @@ function sortperm_sz(Sz::NTuple{N, Vector{Int}}) where N
     return sortperm(tuples; lt=rev_less, rev=true)
 end
 
+# Input : permutation vector
+# Return 1 if it is an even permutation, -1 otherwise (odd permutation)
 """
     permutation_sign(perm) -> Int
 
@@ -76,8 +78,6 @@ Return `1` for an even permutation and `-1` for an odd permutation.
 `perm` is a one-based permutation vector. The implementation decomposes it into
 cycles and counts the number of swaps implied by those cycles.
 """
-# Input : permutation vector
-# Return 1 if it is an even permutation, -1 otherwise (odd permutation)
 function permutation_sign(perm)
     n = length(perm)
     visited = falses(n)
