@@ -119,16 +119,16 @@ The mapping follows the fixed character ordering in `G2_DEF_CHARS`.
 crystal_chars_map(::Type{G2}) = Dict(char => i for (i, char) in enumerate(G2_DEF_CHARS))
 
 """
-    mw_column(::Type{G2}, l::Int) -> Vector{Int}
+    mw_column(::Type{G2}, l::Int, qlabel::NTuple{2,Int}) -> Vector{Int}
 
 Return a canonical maximal-weight tableau column for G2.
 
 `l` must be `1` or `2`, matching the two fundamental representations. The
-returned character list seeds tableau/crystal generation.
+returned character list seeds crystal generation. The q-label supplies the number of copies.
 """
-function mw_column(::Type{G2}, l::Int)
+function mw_column(::Type{G2}, l::Int, qlabel::NTuple{2, Int})
     @assert 1 <= l <= 2
-    return l == 1 ? [1] : [2, 1]
+    return repeat(l == 1 ? [1] : [2, 1], qlabel[l])
 end
 
 getdzs(::Type{G2}) = [collect(getdz(G2, i)) for i=1:nlops(G2)]

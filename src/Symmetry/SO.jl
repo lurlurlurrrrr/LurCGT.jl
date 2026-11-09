@@ -130,18 +130,35 @@ end
 
 # This function should be modified
 """
-    mw_column(::Type{<:SO{N}}, l::Int, aux::Bool) -> Vector{Int}
+    mw_column(::Type{SO{N}}, l::Int, qlabel::NTuple{NZ,Int}) -> Vector{Int}
 
 Return a maximal-weight tableau column for SO(N).
 
-`l` is the column height. `aux` selects the alternate final column needed for
-even SO(N) spinor-related conventions; when it applies, the top character is
-negated to distinguish the auxiliary column.
+`l` is the column height. The original q-label determines the vector-derived
+column multiplicities and selects the alternate terminal column where needed.
+The existing supported label restrictions are checked here.
 """
-function mw_column(::Type{<:SO{N}}, l::Int, aux::Bool) where N
+function mw_column(::Type{SO{N}}, l::Int, qlabel::NTuple{NZ, Int}) where {N, NZ}
+    Nodd = (N % 2 == 1); nlabels = div(N, 2)
+    @assert length(qlabel) == nlabels
+    @assert all(>=(0), qlabel)
+    counts = collect(qlabel)
+    if Nodd
+        @assert qlabel[nlabels] % 2 == 0
+        counts[nlabels] = div(qlabel[nlabels], 2)
+    else
+        @assert (qlabel[nlabels-1] + qlabel[nlabels]) % 2 == 0
+        mi, ma = minmax(qlabel[nlabels-1], qlabel[nlabels])
+        counts[nlabels-1] = mi
+        counts[nlabels] = div(ma - mi, 2)
+    end
+    count = counts[l]
+    iszero(count) && return Int[]
     col = collect(l:-1:1)
-    if aux && l == div(N, 2) col[1] = -col[1] end
-    return col
+    if !Nodd && qlabel[nlabels-1] < qlabel[nlabels] && l == nlabels
+        col[1] = -col[1]
+    end
+    return repeat(col, count)
 end
 
 
@@ -274,22 +291,6 @@ Normalize an SO(N) qlabel before tableau construction.
 crystal code. Odd SO(N) halves the final doubled spin coordinate. Even SO(N)
 rewrites the last two coordinates into ordered spinor-column counts.
 """
-function preprocess(::Type{SO{N}}, qlabel::Vector{Int}) where N
-    Nodd = (N % 2 == 1); NZ = div(N, 2)
-    @assert length(qlabel) == NZ
-    res = copy(qlabel)
-    if Nodd @assert qlabel[NZ] % 2 == 0; res[NZ] = div(qlabel[NZ], 2) 
-    else 
-        @assert (qlabel[NZ-1] + qlabel[NZ]) % 2 == 0
-        mi, ma = minmax(qlabel[NZ-1], qlabel[NZ])
-        res[NZ-1] = mi; res[NZ] = div(ma - mi, 2)
-    end
-    return res
-end
-
-get_auxarg(::Type{SO{N}}, qlabel::NTuple{NZ, Int}) where {N, NZ} = 
-    N % 2 == 0 && qlabel[NZ-1] < qlabel[NZ]
-
 # Weight comparision, inputs are a form of shape of the Young tableau
 """
     less_weight(::Type{SO{N}}, w1::NTuple{div(N,2), Int}, w2::NTuple{div(N,2), Int}) -> Bool

@@ -119,14 +119,15 @@ crystal_chars_map(::Type{SU{N}}) where N = Dict(i => i for i=1:N)
 
 # This function should be modified
 """
-    mw_column(::Type{<:SU}, l::Int) -> Vector{Int}
+    mw_column(::Type{SU{N}}, l::Int, qlabel::NTuple{NZ,Int}) -> Vector{Int}
 
 Return the canonical maximal-weight tableau column of height `l`.
 
 The returned characters descend from `l` to `1` and are used when translating
-qlabels into tableau shapes.
+qlabels into tensor words. The q-label supplies the number of copies.
 """
-mw_column(::Type{<:SU}, l::Int) = collect(l:-1:1)
+mw_column(::Type{SU{N}}, l::Int, qlabel::NTuple{NZ, Int}) where {N, NZ} =
+    repeat(collect(l:-1:1), qlabel[l])
 
 getdzs(::Type{SU{N}}) where N = [collect(getdz(SU{N}, i)) for i=1:nlops(SU{N})]
 

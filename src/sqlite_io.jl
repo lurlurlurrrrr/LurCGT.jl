@@ -17,6 +17,10 @@ using FileWatching: mkpidlock
 # Configuration
 # ============================================================================
 
+# Word order can change representation bases and every dependent CG/recoupling
+# object. Version the entire SQLite file and memory namespace together.
+const CRYSTAL_BASIS_VERSION = "word-v1"
+
 const SQLITE_DBS = Dict{String, SQLite.DB}()
 const SQLITE_DB_LOCK = ReentrantLock()
 const SQLITE_TOUCHED_SYMM = Set{DataType}()
@@ -107,7 +111,7 @@ Return the directory used for process-local SQLite databases in the active run
 mode.
 
 Local databases are stored as one database per symmetry and process id, for
-example `joinpath(sqlite_local_dir(), "SU2", "\$(process_local_id()).db")`.
+example `joinpath(sqlite_local_dir(), "SU2", "\$(process_local_id())_word-v1.db")`.
 Set `LURCGT_LOCALDB_DIR` to choose the source/local directory, and
 `LURCGT_LOCALDB_DIR_NODE` to choose the active node-local directory in
 `LURCGT_RUN_MODE=server`.
@@ -122,7 +126,7 @@ Return the directory used for shared global SQLite databases in the active run
 mode.
 
 Global databases are stored as one database per symmetry, for example
-`joinpath(sqlite_global_dir(), "SU2.db")`.  Set `LURCGT_GLOBALDB_DIR` to choose
+`joinpath(sqlite_global_dir(), "SU2_word-v1.db")`.  Set `LURCGT_GLOBALDB_DIR` to choose
 the source/global directory, and `LURCGT_GLOBALDB_DIR_NODE` to choose the active
 node-local directory in `LURCGT_RUN_MODE=server`.
 """
@@ -151,9 +155,9 @@ function sqlite_db_source_path(::Type{S}, location::Symbol=:local;
     @assert location in (:local, :global)
     symm_name = totxt(S)
     if location == :global
-        return joinpath(sqlite_global_source_dir(env), "$(symm_name).db")
+        return joinpath(sqlite_global_source_dir(env), "$(symm_name)_$(CRYSTAL_BASIS_VERSION).db")
     end
-    return joinpath(sqlite_local_source_dir(env), symm_name, "$(process_id).db")
+    return joinpath(sqlite_local_source_dir(env), symm_name, "$(process_id)_$(CRYSTAL_BASIS_VERSION).db")
 end
 
 """Return the active SQLite database path for non-Abelian symmetry `S`. `location` is `:local` or `:global`; `env` selects directories and `process_id` selects a local database. The function computes a path only and does not open/create the database."""
@@ -163,14 +167,14 @@ function sqlite_db_path(::Type{S}, location::Symbol=:local;
     @assert location in (:local, :global)
     symm_name = totxt(S)
     if location == :global
-        return joinpath(sqlite_global_dir(env), "$(symm_name).db")
+        return joinpath(sqlite_global_dir(env), "$(symm_name)_$(CRYSTAL_BASIS_VERSION).db")
     end
-    return joinpath(sqlite_local_dir(env), symm_name, "$(process_id).db")
+    return joinpath(sqlite_local_dir(env), symm_name, "$(process_id)_$(CRYSTAL_BASIS_VERSION).db")
 end
 
 """Return the global SQLite path used as a merge target for symmetry `S`. `env` determines whether this is the persistent source-global path or the active local-mode global path; no file is opened."""
 function sqlite_merge_global_db_path(::Type{S}; env::AbstractDict=ENV) where {S<:NonabelianSymm}
-    return joinpath(sqlite_merge_global_dir(env), "$(totxt(S)).db")
+    return joinpath(sqlite_merge_global_dir(env), "$(totxt(S))_$(CRYSTAL_BASIS_VERSION).db")
 end
 
 function _copy_sqlite_file_set(source_path::AbstractString, target_path::AbstractString)
@@ -382,24 +386,26 @@ end
 # Generic Cached Save/Load (cache + DB)
 # ============================================================================
 
-"""Internal write-through helper: persist `obj` under `db_key` then update typed in-memory `cache` at `cache_key` under `cache_lock`. `table_name` and `S` select the SQLite table; `verbose` is forwarded to the write."""
+"""Internal write-through helper: persist `obj` under `db_key` then update in-memory `cache` under `(CRYSTAL_BASIS_VERSION, cache_key)` and `cache_lock`. `table_name` and `S` select the SQLite table; `verbose` is forwarded to the write."""
 function _cached_save(::Type{S}, table_name::String, db_key::String, cache_key::Tuple, obj,
                       cache::LRU, cache_lock::ReentrantLock;
                       verbose=0) where {S<:NonabelianSymm}
     save_object_sqlite(S, table_name, db_key, obj; verbose)
+    versioned_key = (CRYSTAL_BASIS_VERSION, cache_key)
     Base.lock(cache_lock) do
-        cache[cache_key] = obj
+        cache[versioned_key] = obj
     end
     return nothing
 end
 
-"""Internal read-through helper: look up `cache_key` in `cache` under `cache_lock`; on a miss, obtain a SQLite key from `db_key_func`, load from `table_name` for `S`, and cache a successful result. `verbose` is forwarded to the storage lookup."""
+"""Internal read-through helper: look up `(CRYSTAL_BASIS_VERSION, cache_key)` in `cache` under `cache_lock`; on a miss, obtain a SQLite key from `db_key_func`, load from `table_name` for `S`, and cache a successful result. `verbose` is forwarded to the storage lookup."""
 function _cached_load(db_key_func::F, ::Type{S}, table_name::String, cache_key::Tuple,
                       cache::LRU, cache_lock::ReentrantLock;
                       verbose=0) where {F, S<:NonabelianSymm}
+    versioned_key = (CRYSTAL_BASIS_VERSION, cache_key)
     # 1. Check cache
     cached = Base.lock(cache_lock) do
-        get(cache, cache_key, nothing)
+        get(cache, versioned_key, nothing)
     end
     cached !== nothing && return cached
 
@@ -410,7 +416,7 @@ function _cached_load(db_key_func::F, ::Type{S}, table_name::String, cache_key::
     # 3. Update cache on hit
     if result !== nothing
         Base.lock(cache_lock) do
-            cache[cache_key] = result
+            cache[versioned_key] = result
         end
     end
     return result

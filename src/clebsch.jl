@@ -857,49 +857,49 @@ function get_irep_frommw(::Type{S},
     weight_basis_dict[Tuple(mw)] = reshape(RT[1], (1, 1))
     # The dimension of weight spaces
     weight_cnt = Dict{NTuple{NZ, Int}, Int}()
-    tabsNvecs = Dict{Tableau{S}, Vector{RT}}()
+    verticesNvecs = Dict{CrystalVertex{S}, Vector{RT}}()
 
     # Assume that the maximal weight has inner multiplicity 1
     mwstate = RT[1]
-    mw_tableau = mw_tableau_qlabel(S, qlabel)
-    @assert get_weight(mw_tableau) == mw
-    tabsNvecs[mw_tableau] = mwstate
+    mw_vertex = mw_crystal_qlabel(S, qlabel)
+    @assert get_weight(mw_vertex) == mw
+    verticesNvecs[mw_vertex] = mwstate
 
     weight_cnt[mw] = 1
     cops = get_crystal_ops(S)
-    tabs_queue = [mw_tableau]
+    vertices_queue = [mw_vertex]
 
-    while !isempty(tabs_queue)
-        new_queue = Tableau{S}[]
-        for tab in tabs_queue
+    while !isempty(vertices_queue)
+        new_queue = CrystalVertex{S}[]
+        for vertex in vertices_queue
             for i in 1:NZ
-                if det_getvector(tab, i, cops, tabsNvecs)
-                    new_tab, new_vec = tab, tabsNvecs[tab]
+                if det_getvector(vertex, i, cops, verticesNvecs)
+                    new_vertex, new_vec = vertex, verticesNvecs[vertex]
                     while true
-                        ow = get_weight(new_tab)
-                        new_tab = apply_lowering(new_tab, cops, i)
-                        if isnothing(new_tab) break end
+                        ow = get_weight(new_vertex)
+                        new_vertex = apply_lowering(new_vertex, cops, i)
+                        if isnothing(new_vertex) break end
 
                         new_vec = Sl[i][ow] * new_vec
                         _, new_vec = divcfac(new_vec)
-                        if haskey(tabsNvecs, new_tab) continue end
+                        if haskey(verticesNvecs, new_vertex) continue end
 
-                        nw = get_weight(new_tab)
+                        nw = get_weight(new_vertex)
                         if !haskey(weight_cnt, nw) weight_cnt[nw] = 0 end
                         weight_cnt[nw] += 1
 
-                        push!(new_queue, new_tab)
-                        tabsNvecs[new_tab] = new_vec
+                        push!(new_queue, new_vertex)
+                        verticesNvecs[new_vertex] = new_vec
                     end
                 end
             end
         end
-        tabs_queue = new_queue
+        vertices_queue = new_queue
     end
 
     nsaved_vecs = Dict{NTuple{NZ, Int}, Int}()
-    for (tab, vec) in tabsNvecs
-        w = get_weight(tab); len = length(vec)
+    for (vertex, vec) in verticesNvecs
+        w = get_weight(vertex); len = length(vec)
         if !haskey(weight_basis_dict, w)
             weight_basis_dict[w] = zeros(RT, len, weight_cnt[w])
         end

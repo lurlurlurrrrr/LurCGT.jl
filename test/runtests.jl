@@ -71,7 +71,7 @@ end
     cache_hit_key = (:cache_hit_no_string_key,)
     cache_hit_obj = (size_byte=1, value=:hit)
     lock(LurCGT.IREP_CACHE_LOCK) do
-        LurCGT.IREP_CACHE[cache_hit_key] = cache_hit_obj
+        LurCGT.IREP_CACHE[(LurCGT.CRYSTAL_BASIS_VERSION, cache_hit_key)] = cache_hit_obj
     end
     @test LurCGT._cached_load(
         () -> error("SQLite string key should not be generated on cache hit"),
@@ -80,6 +80,148 @@ end
     @test conjperm isa LurCGT.Conjperm
     @test conjperm === getNsave_Conjperm(SU{2}, ((1,), (1,)))
     @test conjperm.perm == get_conj_perm(get_CGTom(SU{2}, ((1,), (1,)), ((1,), (1,))))
+end
+
+@testset "highest tensor words" begin
+    @test LurCGT.mw_crystal_qlabel(SU{3}, (2, 2)).word == [1, 1, 2, 1, 2, 1]
+    @test LurCGT.mw_crystal_qlabel(Sp{6}, (1, 1, 1)).word == [1, 2, 1, 3, 2, 1]
+    @test LurCGT.mw_crystal_qlabel(G2, (2, 1)).word == [1, 1, 2, 1]
+    # Preserve SO's existing vector-derived label preprocessing and auxiliary column.
+    @test LurCGT.mw_crystal_qlabel(SO{7}, (1, 1, 2)).word == [1, 2, 1, 3, 2, 1]
+    @test LurCGT.mw_crystal_qlabel(SO{8}, (1, 1, 2, 0)).word == [1, 2, 1, 4, 3, 2, 1]
+    @test LurCGT.mw_crystal_qlabel(SO{8}, (1, 1, 0, 2)).word == [1, 2, 1, -4, 3, 2, 1]
+    @test LurCGT.mw_crystal_qlabel(SO{8}, (0, 0, 1, 1)).word == [3, 2, 1]
+    @test_throws AssertionError LurCGT.mw_crystal_qlabel(SO{7}, (0, 0, 1))
+    @test_throws AssertionError LurCGT.mw_crystal_qlabel(SO{8}, (0, 0, 1, 0))
+end
+
+@testset "chapter 2 tensor product rule" begin
+    for S in (SU{3}, SO{5}, Sp{4}, SO{8}, G2)
+        cops = LurCGT.get_crystal_ops(S)
+        # All two-factor states, including zero symbols and local strings of length two.
+        for x in LurCGT.charlist(S), y in LurCGT.charlist(S), i in 1:LurCGT.nlops(S)
+            vertex = LurCGT.CrystalVertex{S}([x, y])
+            ex, ey = get(cops.ϵ, (i, x), 0), get(cops.ϵ, (i, y), 0)
+            px, py = get(cops.ϕ, (i, x), 0), get(cops.ϕ, (i, y), 0)
+            @test LurCGT.epsilon(vertex, cops, i) == ey + max(0, ex - py)
+            @test LurCGT.phi(vertex, cops, i) == px + max(0, py - ex)
+            for (op, local_ops, index) in (
+                (LurCGT.apply_lowering, cops.f[i], py <= ex ? 1 : 2),
+                (LurCGT.apply_raising, cops.e[i], py < ex ? 1 : 2),
+            )
+                result = op(vertex, cops, i)
+                if haskey(local_ops, vertex.word[index])
+                    expected = copy(vertex.word)
+                    expected[index] = local_ops[expected[index]]
+                    @test result.word == expected
+                else
+                    @test result === nothing
+                end
+            end
+            @test vertex.word == [x, y]
+        end
+    end
+end
+
+@testset "crystal component strings and published words" begin
+    for (S, q, dim) in (
+        (SU{3}, (1, 1), 8), (SU{3}, (2, 1), 15),
+        (SO{5}, (1, 2), 35), (Sp{4}, (1, 1), 16),
+        (SO{8}, (0, 1, 0, 0), 28), (SO{8}, (0, 0, 1, 1), 56),
+        (SO{8}, (0, 0, 2, 0), 35), (SO{8}, (0, 0, 0, 2), 35),
+        (G2, (0, 1), 14), (G2, (1, 1), 64),
+    )
+        cops = LurCGT.get_crystal_ops(S)
+        highest = LurCGT.mw_crystal_qlabel(S, q)
+        @test LurCGT.getqlabel(S, LurCGT.get_weight(highest)) == q
+        @test all(i -> LurCGT.epsilon(highest, cops, i) == 0, 1:LurCGT.nlops(S))
+        seen = Dict(highest => 1)
+        vertices = [highest]
+        for vertex in vertices
+            saved_word, saved_hash = copy(vertex.word), hash(vertex)
+            for i in 1:LurCGT.nlops(S)
+                eps, ph = LurCGT.epsilon(vertex, cops, i), LurCGT.phi(vertex, cops, i)
+                for (op, count) in ((LurCGT.apply_raising, eps), (LurCGT.apply_lowering, ph))
+                    current = vertex
+                    for _ in 1:count
+                        current = op(current, cops, i)
+                        @test current !== nothing
+                    end
+                    @test op(current, cops, i) === nothing
+                end
+                lowered = LurCGT.apply_lowering(vertex, cops, i)
+                if lowered !== nothing
+                    @test LurCGT.apply_raising(lowered, cops, i) == vertex
+                    @test LurCGT.get_weight(lowered) == LurCGT.get_weight(vertex) .- LurCGT.getdz(S, i)
+                    @test LurCGT.epsilon(lowered, cops, i) == eps + 1
+                    @test LurCGT.phi(lowered, cops, i) == ph - 1
+                    if !haskey(seen, lowered)
+                        seen[lowered] = length(vertices) + 1
+                        push!(vertices, lowered)
+                    end
+                end
+                scratch = LurCGT.CrystalVertex{S}(copy(vertex.word))
+                @test LurCGT.apply_lowering!(scratch, cops, i) == (lowered !== nothing)
+                @test scratch == (lowered === nothing ? vertex : lowered)
+                raised = LurCGT.apply_raising(vertex, cops, i)
+                scratch = LurCGT.CrystalVertex{S}(copy(vertex.word))
+                @test LurCGT.apply_raising!(scratch, cops, i) == (raised !== nothing)
+                @test scratch == (raised === nothing ? vertex : raised)
+            end
+            @test vertex.word == saved_word
+            @test hash(vertex) == saved_hash
+            @test seen[LurCGT.CrystalVertex{S}(copy(vertex.word))] == seen[vertex]
+        end
+        @test length(vertices) == dim
+        if S == SU{3} && q == (1, 1)
+            @test count(v -> LurCGT.get_weight(v) == (0, 0), vertices) == 2
+        end
+    end
+end
+
+@testset "mixed highest-weight numerical construction" begin
+    for (S, q, dim) in ((SU{3}, (2, 1), 15), (SO{5}, (1, 2), 35),
+                       (Sp{4}, (1, 1), 16), (SO{8}, (1, 1, 0, 0), 160),
+                       (G2, (1, 1), 64), (G2, (2, 1), 189))
+        rep = LurCGT.getNsave_irep(S, BigInt, q)
+        @test LurCGT.dimension(rep) == dim
+        @test rep.qlabel == q
+        @test sum(size(g, 1) for g in values(rep.innerprod)) == dim
+    end
+end
+
+@testset "crystal basis cache isolation" begin
+    mktempdir() do tmp
+        env = Dict("LURCGT_LOCALDB_DIR" => joinpath(tmp, "local"),
+                   "LURCGT_GLOBALDB_DIR" => joinpath(tmp, "global"))
+        @test LurCGT.sqlite_db_path(SU{3}, :global; env) != joinpath(tmp, "global", "SU3.db")
+        @test endswith(LurCGT.sqlite_db_path(SU{3}, :local; env, process_id="test"),
+                       "test_$(LurCGT.CRYSTAL_BASIS_VERSION).db")
+        @test LurCGT.sqlite_db_source_path(SU{3}, :global; env) ==
+              LurCGT.sqlite_db_path(SU{3}, :global; env) ==
+              LurCGT.sqlite_merge_global_db_path(SU{3}; env)
+        withenv("LURCGT_LOCALDB_DIR" => env["LURCGT_LOCALDB_DIR"],
+                "LURCGT_GLOBALDB_DIR" => env["LURCGT_GLOBALDB_DIR"]) do
+            try
+                LurCGT.close_all_sqlite_dbs()
+                LurCGT.clear_sqlite_cache!()
+                key = LurCGT.irep_cache_key(SU{3}, BigInt, (1, 1))
+                legacy = (size_byte=1, value=:legacy)
+                LurCGT.IREP_CACHE[key] = legacy
+                @test LurCGT.load_irep_sqlite(SU{3}, BigInt, (1, 1)) === nothing
+                rep = LurCGT.getNsave_irep(SU{3}, BigInt, (1, 1))
+                @test LurCGT.dimension(rep) == 8
+                @test LurCGT.IREP_CACHE[(LurCGT.CRYSTAL_BASIS_VERSION, key)] === rep
+                LurCGT.clear_sqlite_cache!()
+                loaded = LurCGT.load_irep_sqlite(SU{3}, BigInt, (1, 1))
+                @test loaded.Sl == rep.Sl
+                @test loaded.innerprod == rep.innerprod
+            finally
+                LurCGT.close_all_sqlite_dbs()
+                LurCGT.clear_sqlite_cache!()
+            end
+        end
+    end
 end
 
 @testset "real-valued lowering operators" begin

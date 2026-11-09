@@ -1,111 +1,84 @@
-# Tableau object consist of length(shape) rows, with shape[i] boxes in the i-th row.
-# colread is a vector representing the column reading of the tableau.
-# Each column is read from bottom to top, and columns are read from right to left.
 """
-Mutable crystal tableau for symmetry `S`.
+    CrystalVertex{S}(word::Vector{Int})
 
-# Fields
-
-- `shape`: number of boxes in each tableau row, from top row downward.
-- `colread`: entries in canonical column-reading order (bottom-to-top within a column, right-to-left across columns).
+A crystal vertex of symmetry `S`, represented by a left-to-right tensor word of
+integer symbols. Each symbol determines its weight and local crystal operators.
+The constructor takes ownership of `word`; never mutate it after hashing the
+vertex or inserting it into a dictionary/set. Use nonmutating crystal operators
+on published vertices and in-place operators only on owned scratch words.
 """
-struct Tableau{S<:NonabelianSymm}
-    shape::Vector{Int}
-    colread::Vector{Int}
+struct CrystalVertex{S<:NonabelianSymm}
+    word::Vector{Int}
 end
 
 """
-Precomputed crystal operation tables for non-Abelian symmetry `S`.
+    Crystal_ops{S}(f, e, ϕ, ϵ)
 
-# Fields
-
-- `f`: per-simple-root lowering transition maps between tableau entries.
-- `e`: per-simple-root raising transition maps.
-- `ϕ`: maximum repeated-lowering count keyed by `(entry, root)`.
-- `ϵ`: maximum repeated-raising count keyed by `(entry, root)`.
+Local crystal operator data for symmetry `S`. `f[i]` and `e[i]` map integer
+symbols under lowering and raising of color `i`; missing entries mean undefined
+action. `ϕ[(i, symbol)]` and `ϵ[(i, symbol)]` store nonzero string lengths.
+Zero is a valid symbol in B and G2, not an undefined-action sentinel.
 """
 struct Crystal_ops{S<:NonabelianSymm}
-    f::Vector{Dict{Int, Int}}  # lowering operators
-    e::Vector{Dict{Int, Int}}  # raising operators
-    ϕ::Dict{Tuple{Int, Int}, Int} # maximal apply number for lowering operators
-    ϵ::Dict{Tuple{Int, Int}, Int} # maximal apply number for raising operators
+    f::Vector{Dict{Int, Int}}
+    e::Vector{Dict{Int, Int}}
+    ϕ::Dict{Tuple{Int, Int}, Int}
+    ϵ::Dict{Tuple{Int, Int}, Int}
 end
 
-is_valid_tableau(::Tableau{S}) where {S<:NonabelianSymm} = true
+"""
+    mw_crystal_qlabel(S, qlabel) -> CrystalVertex{S}
 
-function mw_tableau_qlabel(::Type{S}, qlabel::NTuple{NZ, Int}) where {S<:NonabelianSymm, NZ}
+Construct the highest tensor word in ascending fundamental-node order by
+concatenating `mw_column(S, i, qlabel)` for each fundamental node `i`. The
+symmetry method handles its label convention and returns all columns for `i`.
+The returned word is owned.
+"""
+function mw_crystal_qlabel(::Type{S}, qlabel::NTuple{NZ, Int}) where {S<:NonabelianSymm, NZ}
     @assert NZ == nlops(S)
-    shape = Tableau_shape_from_qlabel(S, collect(qlabel))
-    aux = get_auxarg(S, qlabel)
-    return mw_tableau_shape(S, shape, aux...)
-end
-
-get_auxarg(::Type{S}, qlabel::NTuple{NZ, Int}) where {S<:NonabelianSymm, NZ} = ()
-
-function mw_tableau_shape(::Type{S}, shape::Vector{Int}, aux...) where S <: NonabelianSymm
-    colread = Int[]
-    before_val = 0
-    for i in length(shape):-1:1
-        ncol = shape[i] - before_val
-        if ncol == 0 continue end
-        col = mw_column(S, i, aux...)
-        for j in 1:ncol append!(colread, col) end
-        before_val = shape[i]
+    @assert all(>=(0), qlabel)
+    word = Int[]
+    for i in 1:NZ
+        append!(word, mw_column(S, i, qlabel))
     end
-    return Tableau{S}(shape, colread)
+    return CrystalVertex{S}(word)
 end
 
-# This function can be modified for different symmetries
-function Tableau_shape_from_qlabel(::Type{S}, qlabel::Vector{Int}) where S <: NonabelianSymm
-    @assert length(qlabel) == nlops(S)
-    preprocessed = preprocess(S, qlabel)
-    shape = cumsum(reverse(preprocessed))
-    return append!(reverse(shape))
+"""
+    show(io, vertex::CrystalVertex)
+
+Display the symmetry and tensor word of a vertex without reconstructing a tableau.
+"""
+function Base.show(io::IO, vertex::CrystalVertex{S}) where S<:NonabelianSymm
+    print(io, "CrystalVertex{", S, "}(")
+    show(io, vertex.word)
+    print(io, ")")
 end
 
-preprocess(::Type{S}, qlabel::Vector{Int}) where S <: NonabelianSymm = qlabel
+"""
+    get_crystal_ops(S) -> Crystal_ops{S}
 
-# Pretty print for Tableau
-function Base.show(io::IO, tab::Tableau)
-    println(io, "Shape: ", tab.shape)
-    # Currently, it is represented in column reading form. 
-    # Print in row form
-    println(io, "Table:")
-    nrows = length(tab.shape)
-    rows = Vector{Vector{Int}}(undef, nrows)
-
-    for i in 1:nrows rows[i] = Vector{Int}() end
-    a = mw_tableau_shape(SU{1000}, tab.shape).colread
-
-    for ii in 1:length(tab.colread)
-        col = a[ii]; push!(rows[col], tab.colread[ii])
-    end
-
-    for i in 1:nrows
-        row = rows[i]
-        for elem in row
-            print(io, lpad(elem, 4))
-        end
-        println(io)
-    end
-end
-
+Build local lowering/raising maps and their string lengths from the existing
+symbol alphabet of `S`. No tensor-product vertices are enumerated.
+"""
 function get_crystal_ops(::Type{S}) where S <: NonabelianSymm
     char_list = charlist(S)
     f = get_fops_std(S)
     e = get_eops_std(f)
     ϕ = maximal_apply_num(char_list, f)
     ϵ = maximal_apply_num(char_list, e)
-    
     return Crystal_ops{S}(f, e, ϕ, ϵ)
 end
 
+"""
+    maximal_apply_num(char_list, ops) -> Dict{Tuple{Int,Int},Int}
+
+Count successive local operations for each `(color, symbol)` in the finite
+crystal alphabet. Store only nonzero lengths. `ops` must consist of finite strings.
+"""
 function maximal_apply_num(char_list::Vector{Int}, ops::Vector{Dict{Int, Int}})
-    # Nonzero values are stored in a dictionary
-    # max_apply[(i, char)] = n means ϕ_i(char) = n
     max_apply = Dict{Tuple{Int, Int}, Int}()
     for (i, op) in enumerate(ops)
-        apply_num = Dict{Int, Int}()
         for char in char_list
             count = 0
             current = char
@@ -119,12 +92,18 @@ function maximal_apply_num(char_list::Vector{Int}, ops::Vector{Dict{Int, Int}})
     return max_apply
 end
 
-# Generate the raising operators from the lowering operators
+"""
+    get_eops_std(fops_std) -> Vector{Dict{Int,Int}}
+
+Reverse the local lowering maps to obtain raising maps. Each color must be
+injective on its defined domain, as required for disjoint crystal strings.
+"""
 function get_eops_std(fops_std::Vector{Dict{Int, Int}})
     eops_std = Vector{Dict{Int, Int}}()
     for fop in fops_std
         eop = Dict{Int, Int}()
         for (k, v) in fop
+            @assert !haskey(eop, v) "Crystal lowering edges must have unique inverses"
             eop[v] = k
         end
         push!(eops_std, eop)
@@ -132,85 +111,173 @@ function get_eops_std(fops_std::Vector{Dict{Int, Int}})
     return eops_std
 end
 
-# In-place application of 'opi'th lowering operator to tableau
-function apply_lowering!(tab::Tableau{S}, 
-    cops::Crystal_ops{S},
-    opi::Int) where S <: NonabelianSymm
-    # Apply lowering operator lop to tableau tab
+"""
+    _crystal_signature(vertex, cops, i) -> (epsilon, phi, raising_index, lowering_index)
 
-    f, e = cops.f, cops.e
-    ϕ, ϵ = cops.ϕ, cops.ϵ
-    colread = tab.colread
-    max_ind, max_val = 0, -Inf
-    current_val = 0
-    for i in 1:length(colread)
-        current_val += get(ϕ, (opi, colread[i]), 0)
-        if i > 1 current_val -= get(ϵ, (opi, colread[i-1]), 0) end
-        if current_val > max_val
-            max_val = current_val
-            max_ind = i
+Evaluate the chapter 2 tensor rule without allocating signs. Each factor supplies
+`phi` minus signs then `epsilon` plus signs; cancel `+-` pairs. Return the first
+surviving plus and last surviving minus positions, or zero if absent. The input
+word and operator data are never mutated.
+"""
+function _crystal_signature(vertex::CrystalVertex{S}, cops::Crystal_ops{S}, i::Int) where S<:NonabelianSymm
+    @boundscheck checkbounds(cops.f, i)
+    eps, ph, raising, lowering = 0, 0, 0, 0
+    for k in eachindex(vertex.word)
+        symbol = vertex.word[k]
+        local_phi = get(cops.ϕ, (i, symbol), 0)
+        local_eps = get(cops.ϵ, (i, symbol), 0)
+        # New minus signs cancel the previous plus suffix, never earlier minuses.
+        if local_phi > eps
+            lowering = k
         end
+        if local_phi >= eps
+            raising = local_eps > 0 ? k : 0
+        end
+        ph += max(0, local_phi - eps)
+        eps = local_eps + max(0, eps - local_phi)
     end
-    if !haskey(f[opi], colread[max_ind]) return false end
-    oldval = colread[max_ind]
-    colread[max_ind] = f[opi][oldval]
-    if !is_valid_tableau(tab)
-        colread[max_ind] = oldval
-        return false
-    end
+    return eps, ph, raising, lowering
+end
+
+"""
+    epsilon(vertex::CrystalVertex, cops, i) -> Int
+
+Return the maximal number of successive color-`i` raising operations on the
+product vertex, using the chapter 2 tensor rule. Does not mutate or enumerate it.
+"""
+epsilon(vertex::CrystalVertex{S}, cops::Crystal_ops{S}, i::Int) where S<:NonabelianSymm =
+    _crystal_signature(vertex, cops, i)[1]
+
+"""
+    phi(vertex::CrystalVertex, cops, i) -> Int
+
+Return the maximal number of successive color-`i` lowering operations on the
+product vertex, using the chapter 2 tensor rule. Does not mutate or enumerate it.
+"""
+phi(vertex::CrystalVertex{S}, cops::Crystal_ops{S}, i::Int) where S<:NonabelianSymm =
+    _crystal_signature(vertex, cops, i)[2]
+
+"""
+    apply_lowering!(vertex::CrystalVertex, cops, i) -> Bool
+
+Lower an owned scratch word at the rightmost surviving minus of its `i`-signature.
+Return false without mutation if undefined. Never use on a hashed/published vertex.
+"""
+function apply_lowering!(vertex::CrystalVertex{S}, cops::Crystal_ops{S}, i::Int) where S<:NonabelianSymm
+    k = _crystal_signature(vertex, cops, i)[4]
+    iszero(k) && return false
+    vertex.word[k] = cops.f[i][vertex.word[k]]
     return true
 end
 
-# Non in-place application of 'opi'th lowering operator to tableau
-function apply_lowering(tab::Tableau{S}, 
-    cops::Crystal_ops{S},
-    opi::Int) where S <: NonabelianSymm
-    new_tab = Tableau{S}(copy(tab.shape), copy(tab.colread))
-    success = apply_lowering!(new_tab, cops, opi)
-    if success return new_tab else return nothing end
+"""
+    apply_lowering(vertex::CrystalVertex, cops, i) -> Union{CrystalVertex,Nothing}
+
+Return a lowered vertex with a new owned word, or `nothing` if undefined. The
+input word is never mutated, including after it has been hashed or stored as a key.
+"""
+function apply_lowering(vertex::CrystalVertex{S}, cops::Crystal_ops{S}, i::Int) where S<:NonabelianSymm
+    k = _crystal_signature(vertex, cops, i)[4]
+    iszero(k) && return nothing
+    word = copy(vertex.word)
+    word[k] = cops.f[i][word[k]]
+    return CrystalVertex{S}(word)
 end
 
-function get_weight(tab::Tableau{S}) where S <: NonabelianSymm
-    cnt::Dict{Int, Int} = get_count(tab)
+"""
+    apply_raising!(vertex::CrystalVertex, cops, i) -> Bool
+
+Raise an owned scratch word at the leftmost surviving plus of its `i`-signature.
+Return false without mutation if undefined. Never use on a hashed/published vertex.
+"""
+function apply_raising!(vertex::CrystalVertex{S}, cops::Crystal_ops{S}, i::Int) where S<:NonabelianSymm
+    k = _crystal_signature(vertex, cops, i)[3]
+    iszero(k) && return false
+    vertex.word[k] = cops.e[i][vertex.word[k]]
+    return true
+end
+
+"""
+    apply_raising(vertex::CrystalVertex, cops, i) -> Union{CrystalVertex,Nothing}
+
+Return a raised vertex with a new owned word, or `nothing` if undefined. The
+input word is never mutated, including after it has been hashed or stored as a key.
+"""
+function apply_raising(vertex::CrystalVertex{S}, cops::Crystal_ops{S}, i::Int) where S<:NonabelianSymm
+    k = _crystal_signature(vertex, cops, i)[3]
+    iszero(k) && return nothing
+    word = copy(vertex.word)
+    word[k] = cops.e[i][word[k]]
+    return CrystalVertex{S}(word)
+end
+
+"""
+    get_weight(vertex::CrystalVertex{S}) -> NTuple{nzops(S),Int}
+
+Sum the existing symbol weights in the package's z-coordinate convention.
+The word is read-only; equal weights do not imply equal vertices.
+"""
+function get_weight(vertex::CrystalVertex{S}) where S <: NonabelianSymm
+    cnt = get_count(vertex)
     NZ = nzops(S)
-    szs = getsz_def_vec(S)
+    # Supported alphabets store concrete integer z-coordinate lists.
+    szs = getsz_def_vec(S)::Vector{Vector{Int}}
     chardict = crystal_chars_map(S)
     @assert length(szs[1]) == NZ
     weight = zeros(Int, NZ)
     for char in keys(cnt)
         weight += cnt[char] * szs[chardict[char]]
     end
-    return Tuple(weight)
+    return NTuple{NZ, Int}(weight)
 end
 
-function det_getvector(tab::Tableau{S}, 
-    i::Int,
-    cops::Crystal_ops{S},
-    tabdict::Dict{Tableau{S}, Vector{RT}}) where {S<:NonabelianSymm, RT}
+"""
+    det_getvector(vertex::CrystalVertex, i, cops, verticesNvecs) -> Bool
 
+Return whether the lowering string below `vertex` contains an undiscovered word.
+Preserve the numerical traversal's existing look-ahead rule. Only new words are
+created; dictionary keys and their words remain unchanged.
+"""
+function det_getvector(vertex::CrystalVertex{S}, i::Int, cops::Crystal_ops{S},
+    verticesNvecs::Dict{CrystalVertex{S}, Vector{RT}}) where {S<:NonabelianSymm, RT}
     while true
-        tab = apply_lowering(tab, cops, i)
-        if tab === nothing break end
-        if !haskey(tabdict, tab) return true end
+        vertex = apply_lowering(vertex, cops, i)
+        vertex === nothing && break
+        !haskey(verticesNvecs, vertex) && return true
     end
     return false
 end
 
-function get_count(tab::Tableau{S}) where S <: NonabelianSymm
-    cnt::Dict{Int, Int} = Dict{Int, Int}()
-    for val in tab.colread
+"""
+    get_count(vertex::CrystalVertex) -> Dict{Int,Int}
+
+Count occurrences of each symbol without changing the tensor word.
+"""
+function get_count(vertex::CrystalVertex)
+    cnt = Dict{Int, Int}()
+    for val in vertex.word
         cnt[val] = get(cnt, val, 0) + 1
     end
     return cnt
 end
 
-# Needed to define hash for Tableau to be used as Dict key
-function Base.hash(tab::Tableau{S}, h::UInt) where S<:NonabelianSymm
-    h′ = h
-    for e in tab.colread h′ = hash(e, h′) end
-    return h′
+"""
+    hash(vertex::CrystalVertex, h::UInt) -> UInt
+
+Hash the word by contents using the existing sequential symbol hash. The caller
+must keep the word unchanged after hashing; no hidden freezing or mutation occurs.
+"""
+function Base.hash(vertex::CrystalVertex, h::UInt)
+    for symbol in vertex.word
+        h = hash(symbol, h)
+    end
+    return h
 end
 
-function Base.:(==)(t1::Tableau{S}, t2::Tableau{S}) where S<:NonabelianSymm
-    return t1.shape == t2.shape && t1.colread == t2.colread
-end
+"""
+    ==(a::CrystalVertex{S}, b::CrystalVertex{S}) -> Bool
+
+Compare tensor words by contents within the same symmetry. Different weights or
+embeddings are not identified by this operation; it does not mutate either word.
+"""
+Base.:(==)(a::CrystalVertex{S}, b::CrystalVertex{S}) where S<:NonabelianSymm = a.word == b.word

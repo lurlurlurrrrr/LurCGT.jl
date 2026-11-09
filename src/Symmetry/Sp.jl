@@ -126,14 +126,15 @@ end
 
 # This function should be modified
 """
-    mw_column(::Type{<:Sp}, l::Int) -> Vector{Int}
+    mw_column(::Type{Sp{N}}, l::Int, qlabel::NTuple{NZ,Int}) -> Vector{Int}
 
 Return the canonical maximal-weight tableau column of height `l`.
 
 The column characters descend from `l` to `1`, matching the symplectic tableau
-convention used to seed crystal generation.
+convention used to seed crystal generation. The q-label supplies the number of copies.
 """
-mw_column(::Type{<:Sp}, l::Int) = collect(l:-1:1)
+mw_column(::Type{Sp{N}}, l::Int, qlabel::NTuple{NZ, Int}) where {N, NZ} =
+    repeat(collect(l:-1:1), qlabel[l])
 
 getdzs(::Type{Sp{N}}) where N = [collect(getdz(Sp{N}, i)) for i=1:nlops(Sp{N})]
 

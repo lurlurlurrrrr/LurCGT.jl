@@ -1,8 +1,8 @@
 # Part 1: Replace tableau vertices with tensor-word crystal vertices
 
-Status: implementation plan. Preserve the current code structure and replace
-`Tableau{S}` as the representation of one crystal vertex. This document changes
-no Julia code or cache data.
+Status: implemented in `src/Symmetry/crystal.jl` and the existing irrep traversal.
+`CrystalVertex{S}` replaces `Tableau{S}` as the representation of one point.
+The numerical storage structure and supported symmetry labels remain unchanged.
 
 1. **This part:** one new vertex type and its crystal/tensor operations,
    integrated into the existing traversal for currently supported representations.
@@ -28,14 +28,14 @@ Keep `Crystal_ops{S}` as the operator-data structure. Do not introduce whole-cry
 types, tensor-product container types, graph enumeration as a prerequisite, or a
 new numerical representation pipeline.
 
-This part changes vertex storage and the operations on it. It does not introduce
-reduced-word schedules or change the chosen numerical basis deliberately. Any
-unavoidable change of numerical basis must be identified and handled through
-part 3's cache/validation gate rather than treated as a harmless label rename.
+This part changes vertex storage and fixes a new ascending-node tensor-word
+convention. This can change the numerical basis, so all dependent SQLite caches
+and in-memory cache entries use the `word-v1` namespace. Old database files are
+retained separately. Reduced-word schedules remain in part 2.
 
 ## One replacement vertex type
 
-Proposed layout, to be implemented in `src/Symmetry/crystal.jl`:
+Implemented layout in `src/Symmetry/crystal.jl`:
 
 ```julia
 struct CrystalVertex{S<:NonabelianSymm}
@@ -98,8 +98,8 @@ only by weight. If several copies occur, the chosen highest word identifies one.
 
 When all required fundamental crystals are available, for
 ``\lambda=\sum_i m_i\omega_i`` the highest word is the concatenation of
-``m_i`` copies of these fundamental highest words in a fixed order. The component
-reached from it is ``B(\lambda)``. A point in the product of fundamental crystals
+``m_i`` copies of these fundamental highest words in ascending node order.
+The component reached from it is ``B(\lambda)``. A point in the product of fundamental crystals
 is represented by concatenating the words of its factor vertices. Associativity
 of the tensor rule makes this flattening valid for same-type crystal embeddings;
 fundamental block boundaries need not be stored in every vertex. Construction
@@ -154,7 +154,7 @@ Retain the existing SO vector-derived highest words as well. In B, the column
 ``\omega_{r-1}+\omega_r``, while `[r, ..., 1]` and `[-r, r-1, ..., 1]`
 have weights ``2\omega_r`` and ``2\omega_{r-1}``, respectively. These are
 currently useful bootstrap modules, not spin fundamentals. Preserve the existing
-`preprocess`/auxiliary-column logic and column order when constructing their words;
+`preprocess`/auxiliary-column logic while concatenating columns in ascending height;
 only the resulting vertex storage loses its shape field.
 
 Keep existing low-rank handling and accepted labels for B1=A1, C1=A1, D3=A3,
@@ -187,10 +187,12 @@ SO tableau label preprocessing for its supported vector-derived modules; changin
 spin-label acceptance or repairing unrelated conversion logic is outside this
 point-type refactor.
 
-For a currently supported q-label, concatenate the prescribed words in a documented fixed
-order. First match existing column order wherever possible so this vertex change
-does not gratuitously change numerical traversal. Test every highest-word recipe
-for weight, annihilation by all raising operators, and expected component size
+For SU/Sp/G2, `mw_crystal_qlabel` concatenates node-1 words first, then node-2
+words, and so on. In SU(3), `(A,B)` becomes A copies of `[1]` followed by B
+copies of `[2,1]`. For SO, apply existing preprocessing first and concatenate
+the resulting columns in ascending height, retaining the auxiliary final column.
+This deliberately replaces the old descending-column order. Test every
+highest-word recipe for weight, annihilation by all raising operators, and expected component size
 at small ranks. Do not require materializing every rank's fundamental crystals
 merely to make the recipes available.
 
@@ -200,7 +202,7 @@ Extend the current operations to `CrystalVertex{S}`:
 
 | Existing operation | Minimal adaptation |
 | --- | --- |
-| `mw_tableau_qlabel` | Add a highest-vertex constructor using existing fundamental and SO bootstrap words. Retain label preprocessing and column order. |
+| `mw_tableau_qlabel` | Add a highest-vertex constructor using existing fundamental and SO bootstrap words. Retain label preprocessing and use ascending column order. |
 | `get_crystal_ops`, `get_eops_std`, `maximal_apply_num` | Reuse the current alphabet maps. Validate inverse transitions and string lengths; reject collisions or inconsistent reverse edges. |
 | `apply_lowering!`, `apply_lowering` | Apply the tensor rule to `word`; preserve the existing `Bool` / vertex-or-`nothing` result conventions and failure behavior. |
 | Raising and epsilon/phi access | Add the corresponding vertex operations using the same alphabet maps and tensor convention. |
@@ -263,8 +265,8 @@ Local inverse-edge and string-length checks alone do not prove a seed is normal.
    SO bootstrap/auxiliary columns. At small ranks compare reachable vertices,
    weights, and transitions with the existing tableaux; include the 14-vertex
    G2 component. No spin alphabet or spin test fixture is needed.
-3. Adapt lowering and add raising/epsilon/phi. Test the A1 convention example,
-   both tie cases, inverse operators, empty/single-factor words, and failure
+3. Adapt lowering and implement `apply_raising`, `epsilon`, and `phi`. Test the
+   A1 convention example, both tie cases, inverse operators, empty/single-factor words, and failure
    without mutation. Check grouped fundamental operations agree with flattened
    words; include A2 ``B(\omega_1+\omega_2)`` with its repeated zero weight.
 4. Replace the vertex type in the existing `det_getvector` and `get_irep_frommw`
@@ -275,20 +277,20 @@ Local inverse-edge and string-length checks alone do not prove a seed is normal.
    spin requests remain unsupported. Keep spin symbol maps, fundamental recipes,
    numerical seeds, and public-label extensions entirely in the later work.
 
-Treat the behavior-preserving vertex replacement as an internal refactor: do not
-add tests or fixtures by default, and run only the prescribed DMRG test runner.
-The checks above specify invariants to preserve during review. If implementation
-requires new behavior, separate it from this refactor and follow the normal
-relevant-test policy. Inspect type stability and measure allocation/runtime
-changes against the current tableau traversal.
+The vertex methods and word convention introduce requested behavior, so they
+follow the normal relevant-test policy. Small cases in `test/runtests.jl` cover
+chapter 2 product rules, full small components, published-key immutability,
+mixed-label numerical construction, and cache separation/reload. Also run the
+relevant CG/recoupling checks and downstream DMRG validation. Inspect type
+stability and measure allocation impact against the old tableau operations.
 Preserve opportunities for independent per-weight numerical work without
 rewriting the existing traversal solely to parallelize it. Apply the
 [shared implementation policy](crystal_basis_integration_plan.md#shared-implementation-policy).
 
 Completion means the existing construction can use word-only vertices in place
 of tableaux for currently supported A–D/G2 representations, existing highest
-words and tensor embeddings are preserved, and consumers use the
-same weight/raising/lowering operations. Part 2 consumes these vertex operations
+weights and tensor embeddings are preserved under the explicit new word
+convention, and consumers use the same weight/raising/lowering operations. Part 2 consumes these vertex operations
 directly; it does not require owned whole-crystal graphs or precomputed edge tables.
 
 ## References and provenance
@@ -306,5 +308,5 @@ Representations and Combinatorics* (2017), the supplied PDF at
 - Chapters 3 and 6: tableau realizations retained as seed builders/references.
 
 These passages were consulted in the local PDF's extracted text for this rewrite.
-The vertex type and storage choices are engineering proposals, not prescriptions from
-the book. This documentation-only change ran no numerical tests or doc builds.
+The vertex type, ascending word order, and cache namespace are implementation
+choices, not prescriptions from the book. No documentation build is required.
