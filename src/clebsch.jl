@@ -7,7 +7,7 @@ const CG3block{NZ, CT} = Dict{NTuple{3, NTuple{NZ, Int}}, Array{CT, 4}}
 # Just save the trivial and defining irreducible representations,
 # and possible alternating product representations of defining rep.
 function get_fundamental_ireps(::Type{S}, ::Type{RT}; 
-        verbose=0) where {S<:NonabelianSymm, RT<:Number}
+        verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number}
 	@assert isvalidsymm(S)
     println("Start generating fundamental irreps of symmetry $(S)...")
     # Trivial (1-dimensional) representation
@@ -53,7 +53,7 @@ optionally save the generated objects to SQLite.
 function generate_every_CGT(::Type{S}, ::Type{RT}, ::Type{CT}, 
     qlabels_in::NTuple{2, NTuple{NZ, Int}},
     qlabels_out::Union{Vector{NTuple{NZ, Int}}, Nothing};
-    verbose=0,
+    verbose=VERBOSE[],
     assertlev=0,
     save=true) where {S<:NonabelianSymm, RT<:Number, CT<:Number, NZ}
 
@@ -156,7 +156,7 @@ function generate_every_CGT(::Type{S}, ::Type{RT}, ::Type{CT},
                     # Get the maximal weight state and next start_index
                     mwstate::Vector{CT}, start_index, mwnorm = 
                     get_mwstate(irep1, irep2, prod_winfo[w], foundvecs_w, remain_inmult[w], 
-                    result_qlabels, inprod_info, mwstate_norms, start_index; verbose)
+                    result_qlabels, inprod_info, mwstate_norms, start_index; verbose=VERBOSE[])
 
                     push!(mwstate_norms[qlabel_out], mwnorm)
                     nfactors[oidx] = 1//mwnorm
@@ -221,7 +221,7 @@ end
 
 # Overall structure is similar to generate_every_CGT function
 """
-    omlookup(::Type{S}, ::Type{RT}, q1, q2; verbose=0)
+    omlookup(::Type{S}, ::Type{RT}, q1, q2; verbose=VERBOSE[])
 
 Compute and cache outer multiplicities for the tensor product `q1 x q2`.
 
@@ -235,7 +235,7 @@ entries and the `ValidOuts` record for this pair.
 function omlookup(::Type{S}, ::Type{RT},
     q1::NTuple{NZ, Int},
     q2::NTuple{NZ, Int};
-    verbose=0) where {S<:NonabelianSymm, RT<:Number, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number, NZ}
 
     @assert nzops(S) == NZ; @assert q1 <= q2
     irep1, irep2 = getNsave_irep(S, RT, q1), getNsave_irep(S, RT, q2)
@@ -342,7 +342,7 @@ end
 
 """
     get_mwstate(irep1, irep2, weight_info, foundvecs_w, remain_inmult,
-                result_qlabels, inprod_info, mwstate_norms, start_index; verbose)
+                result_qlabels, inprod_info, mwstate_norms, start_index; verbose=VERBOSE[])
 
 Construct a new maximal-weight vector in one product weight space.
 
@@ -364,17 +364,21 @@ function get_mwstate(irep1::Irep{S, NL, NZ, RT},
         inprod_info::Dict{NTuple{NZ, Int}, Tuple{Matrix{RT}, Matrix{RT}, Rational{RT}}},
         mwstate_norms::Dict{NTuple{NZ, Int}, Vector{BigInt}},
         start_index::Int; 
-        verbose) where {S<:NonabelianSymm, NL, NZ, RT<:Number, CT<:Number}
+        verbose=VERBOSE[]) where {S<:NonabelianSymm, NL, NZ, RT<:Number, CT<:Number}
 
-    if verbose > 2 println(already_found_norms) end
-    if verbose > 2 println(start_index) end
-    if verbose > 2 println(length(already_found_norms)) end
+    if verbose > 2
+        println(already_found_norms)
+        println(start_index)
+        println(length(already_found_norms))
+    end
     # Dimensionality of weight space for product space
     inmult = size(foundvecs_w, 1)
-    if verbose > 1 println("\nget_mwstate function\n") end 
-    if verbose > 1 println("Total multiplicity : $(inmult), remain_inmult : $(remain_inmult)") end
-    if verbose > 1 println("Already found : ") end
-    if verbose > 1 display(foundvecs_w) end
+    if verbose > 1
+        println("\nget_mwstate function\n")
+        println("Total multiplicity : $(inmult), remain_inmult : $(remain_inmult)")
+        println("Already found : ")
+        display(foundvecs_w)
+    end
     # For each already found vector in the weight space of 'w'
     found = false
     mwstate = zeros(CT, inmult)
@@ -459,7 +463,7 @@ function prodNcfac(A::AbstractArray,
 end
 
 """
-    apply_metric(start_index, irep1, irep2, weight_info; verbose)
+    apply_metric(start_index, irep1, irep2, weight_info; verbose=VERBOSE[])
 
 Apply the product inner-product metric column associated with `start_index`.
 
@@ -472,7 +476,7 @@ function apply_metric(start_index::Int,
         irep1::Irep{S, NL, NZ, RT}, 
         irep2::Irep{S, NL, NZ, RT}, 
         weight_info::WeightInfo{NZ};
-        verbose) where {S<:NonabelianSymm, NL, NZ, RT<:Number}
+        verbose=VERBOSE[]) where {S<:NonabelianSymm, NL, NZ, RT<:Number}
     z1, z2, ist, ied, nzi = get_zinfo(start_index, weight_info)
     inner_prod1 = irep1.innerprod[z1]; l1 = size(inner_prod1)[1]
     inner_prod2 = irep2.innerprod[z2]; l2 = size(inner_prod2)[1]
@@ -505,7 +509,7 @@ end
 
 
 """
-    orthogonalize(v, exv, overlap, exvnorm; verbose)
+    orthogonalize(v, exv, overlap, exvnorm; verbose=VERBOSE[])
 
 Orthogonalize candidate vector `v` against one accepted vector `exv`.
 
@@ -518,7 +522,7 @@ function orthogonalize(v::Vector,
         exv::Vector, 
         overlap::Integer, 
         exvnorm::Integer; 
-        verbose) 
+        verbose=VERBOSE[])
     factor = overlap // exvnorm
     v = factor.den * v - factor.num * exv
     cfac, v = divcfac(v)
@@ -534,7 +538,7 @@ end
 
 """
     get_multiplet(::Type{S}, mwstate, prod_inmult, sl_prod, sz_prod,
-                  output_irep, getfull, wout_set, mw; verbose=0, assertlev=0)
+                  output_irep, getfull, wout_set, mw; verbose=VERBOSE[], assertlev=0)
 
 Generate all requested weight-space vectors in one output multiplet.
 
@@ -555,7 +559,7 @@ function get_multiplet(::Type{S},
         getfull::Bool,
         wout_set::Set{NTuple{NZ, Int}},
         mw::NTuple{NZ, Int};
-        verbose=0, 
+        verbose=VERBOSE[],
         assertlev=0) where {S<:NonabelianSymm, NL, NZ, RT<:Number, CT<:Number}
 
     output_vectors = Dict{NTuple{NZ, Int}, Matrix{CT}}()
@@ -570,14 +574,14 @@ function get_multiplet(::Type{S},
     end
 
     if getfull && assertlev > 0
-        check_vanishing(output_vectors, sl_prod, output_irep; verbose)
+        check_vanishing(output_vectors, sl_prod, output_irep; verbose=VERBOSE[])
         if verbose > 1 println("multiplet $(getqlabel(S, mw)) passed") end
     end
     return output_vectors
 end
 
 """
-    get_wspace!(::Type{S}, output_vectors, targetw, prod_inmult, sl_prod, output_irep; verbose)
+    get_wspace!(::Type{S}, output_vectors, targetw, prod_inmult, sl_prod, output_irep; verbose=VERBOSE[])
 
 Populate one target weight space in a generated multiplet.
 
@@ -593,7 +597,7 @@ function get_wspace!(::Type{S},
     prod_inmult::Dict{NTuple{NZ, Int}, Int},
     sl_prod::NTuple{NL, Dict{NTuple{NZ, Int}, SparseMatrixCSC{RT}}},
     output_irep::Irep{S, NL, NZ, RT};
-    verbose) where {S<:NonabelianSymm, NL, NZ, RT<:Number, CT<:Number}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NL, NZ, RT<:Number, CT<:Number}
 
     # If the target weight space is already filled, return
     if haskey(output_vectors, targetw) return end
@@ -631,7 +635,7 @@ function get_wspace!(::Type{S},
 end
 
 """
-    check_vanishing(output_vectors, sl_prod, output_irep; verbose)
+    check_vanishing(output_vectors, sl_prod, output_irep; verbose=VERBOSE[])
 
 Verify terminal lowering conditions for a generated multiplet.
 
@@ -642,7 +646,7 @@ assertion helper for exact CGT construction, not a numerical tolerance check.
 function check_vanishing(output_vectors::Dict{NTuple{NZ, Int}, Matrix{CT}},
         sl_prod::NTuple{NL, Dict{NTuple{NZ, Int}, SparseMatrixCSC{RT}}},
         output_irep::Irep{S, NL, NZ, RT};
-        verbose) where {S<:NonabelianSymm, NL, NZ, RT<:Number, CT<:Number}
+        verbose=VERBOSE[]) where {S<:NonabelianSymm, NL, NZ, RT<:Number, CT<:Number}
     for opi in 1:NZ
         if verbose > 1 println("Testing lowering operator $(opi)") end
         prod_lop = sl_prod[opi]
@@ -784,7 +788,7 @@ end
 function getNsave_irep(::Type{S}, 
     ::Type{RT}, 
     qlabel::NTuple{NZ, Int}; 
-    verbose=0) where {S<:AbelianSymm, RT<:Number, NZ} 
+    verbose=VERBOSE[]) where {S<:AbelianSymm, RT<:Number, NZ}
 
     @assert nzops(S) == NZ
     Sl = (); Sz = Dict{NTuple{NZ, Int}, Tuple{Int, Int}}()
@@ -802,7 +806,7 @@ end
 function getNsave_irep(::Type{S}, 
     ::Type{RT}, 
     qlabel::NTuple{NZ, Int}; 
-    verbose=0) where {S<:NonabelianSymm, RT<:Number, NZ} 
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number, NZ}
 
     # If it exists, load the representation and return
     irep = load_irep_sqlite(S, RT, qlabel; verbose) 
@@ -841,7 +845,7 @@ function get_irep_frommw(::Type{S},
         inner_prod2,
         mw::Union{NTuple{NZ, Int}, Nothing},
         weight_info::Union{Nothing, Dict{NTuple{NZ, Int}, WeightInfo{NZ}}};
-        verbose) where {S<:NonabelianSymm, RT<:Number, NL, NZ}
+        verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number, NL, NZ}
 
     # ordered (from highest to lowest) z-values of the original representation
     zvals_ordered = sorted_zvals(Sz)
@@ -947,8 +951,10 @@ function get_irep_frommw(::Type{S},
                 # Apply the lowering operator to the vector
                 v_new = Sl[opi][w] * v
 
-                if verbose > 1 println("Applying Sl[$(opi)] to $(v)") end
-                if verbose > 1 println("Result : ", v_new) end
+                if verbose > 1
+                    println("Applying Sl[$(opi)] to $(v)")
+                    println("Result : ", v_new)
+                end
 
                 if iszero(v_new) continue end
 
@@ -982,7 +988,7 @@ end
 
 function get_inv_innerprod(::Type{S},
     ninnerprod::Dict{NTuple{NZ, Int}, Matrix{RT}}; 
-    verbose=0) where {S<:NonabelianSymm, RT<:Number, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number, NZ}
 
     inv_innerprod = Dict{NTuple{NZ, Int}, Tuple{Matrix{RT}, Rational{RT}}}()
 
@@ -1003,7 +1009,7 @@ end
 
 
 function get_TNmat(inprod_matrix::Matrix{RT}; 
-        verbose=0) where {RT<:Number}
+        verbose=VERBOSE[]) where {RT<:Number}
     Nmat = inprod_matrix
     if verbose > 2 println(Nmat) end
     sz = size(inprod_matrix)[1]
@@ -1018,8 +1024,10 @@ function get_TNmat(inprod_matrix::Matrix{RT};
             if verbose > 2 display(transf_mat) end
             Tmat = Tmat * transf_mat
             Nmat = transpose(transf_mat) * Nmat * transf_mat
-            if verbose > 2 println("Nmat:"); display(Nmat) end
-            if verbose > 2 println("Tmat:"); display(Tmat) end
+            if verbose > 2
+                println("Nmat:"); display(Nmat)
+                println("Tmat:"); display(Tmat)
+            end
         end
         cfac = gcd(Tmat[:, j])
         if verbose > 2 println("cfac:", cfac) end
@@ -1038,7 +1046,7 @@ end
 
 # Currently this function is not used.
 # It was used to calculate TNT and its inverse.
-inv_mat(mat::Matrix{RT}; verbose=0) where RT<:Number = 
+inv_mat(mat::Matrix{RT}; verbose=VERBOSE[]) where RT<:Number =
 (s = size(mat, 1); solve_gaussian(s, copy(mat), Matrix{RT}(I, s, s); verbose=verbose))
 
 # Currently this function is not used.
@@ -1057,7 +1065,7 @@ function getNsave_1jsym(::Type{S},
         ::Type{RT},
         ::Type{CT},
         q::NTuple{NZ, Int};
-        verbose=0) where {S<:NonabelianSymm, RT<:Number, CT<:Number, NZ}
+        verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number, CT<:Number, NZ}
     nfac = 1
     dualq = get_dualq(S, q)
     permute = q > dualq
@@ -1164,7 +1172,7 @@ end
 # Solve Ax = b. To use solve_gaussian function, transpose it
 function solve_linsys(A::AbstractMatrix{RT},
     b::AbstractVector{RT};
-    verbose=0) where {RT<:Number}
+    verbose=VERBOSE[]) where {RT<:Number}
 
     _, n = size(A)
     A_t = transpose(A)
@@ -1181,7 +1189,7 @@ end
 function solve_gaussian(mult::Int, 
     A::AbstractMatrix{RT}, 
     B::AbstractMatrix{RT};
-    verbose=0) where {RT<:Number}
+    verbose=VERBOSE[]) where {RT<:Number}
 
     if verbose > 1
         println("A : ")
@@ -1225,8 +1233,10 @@ function solve_gaussian(mult::Int,
     @assert isdiag(A[:, 1:mult])
     Adiag = diag(A[:, 1:mult])
     M = B[:, 1:mult]
-    if verbose > 1 println("Adiag : ", Adiag) end
-    if verbose > 1 println("M : ", M) end
+    if verbose > 1
+        println("Adiag : ", Adiag)
+        println("M : ", M)
+    end
     n = lcm(Adiag)
     for i=1:mult M[:, i] *= div(n, Adiag[i]) end
     Mgcd = gcd(M)
@@ -1241,7 +1251,7 @@ function get_innerprodmat(::Type{S}, ::Type{RT},
         wdim::Int, 
         inner_prod1, 
         inner_prod2, 
-        weight_info; verbose) where {S<:NonabelianSymm, RT<:Number, NZ}
+        weight_info; verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number, NZ}
     inprod_matrix = zeros(RT, wdim, wdim)
     winfo = isnothing(weight_info) ? nothing : weight_info[zval]
     for i=1:wdim
@@ -1260,7 +1270,7 @@ inprod(v1::Vector{RT},
     ::Nothing,
     ::Nothing, 
     zval::NTuple{NZ, Int};
-    verbose=0) where {RT<:Number, NZ} =
+    verbose=VERBOSE[]) where {RT<:Number, NZ} =
 dot(v1, basis_innerprod[zval] * v2)
 
 function inprod(V1::Vector, 
@@ -1269,11 +1279,13 @@ function inprod(V1::Vector,
     inner_prod2::Dict{NTuple{NZ, Int}, Matrix{RT}},
     winfo::WeightInfo{NZ},
     ::Any;
-    verbose=0) where {RT<:Number, NZ} 
-    if verbose > 1 println("Calculating inner product of $(V1) and $(V2)") end
-    if verbose > 1 println("inner product of 1st space: $(inner_prod1)") end
-    if verbose > 1 println("inner product of 2nd space: $(inner_prod2)") end
-    if verbose > 1 println("winfo : $(winfo)") end
+    verbose=VERBOSE[]) where {RT<:Number, NZ}
+    if verbose > 1
+        println("Calculating inner product of $(V1) and $(V2)")
+        println("inner product of 1st space: $(inner_prod1)")
+        println("inner product of 2nd space: $(inner_prod2)")
+        println("winfo : $(winfo)")
+    end
 
     result = 0
     for ((z1, z2), (ist, ied)) in winfo
@@ -1290,7 +1302,7 @@ function partial_inprod(V1::Vector{VT},
     V2::Vector{VT}, 
     inner_prod1::Matrix{MT}, 
     inner_prod2::Matrix{MT}; 
-    verbose=0) where {VT<:Integer, MT<:Integer}
+    verbose=VERBOSE[]) where {VT<:Integer, MT<:Integer}
     s1 = size(inner_prod1)[1]
     s2 = size(inner_prod2)[1]
     @assert length(V1) == length(V2)
@@ -1313,7 +1325,7 @@ end
 # Get the coefficients when the vector v is expressed as a 
 # linear combination of the basis vectors of the weight space
 function get_linear_coeff(v::Vector{RT}, 
-        basis::Matrix{RT}; verbose=0) where RT<:Number
+        basis::Matrix{RT}; verbose=VERBOSE[]) where RT<:Number
     #println("Getting linear coefficients of the vector ")
     #println(v)
     #println(basis)
@@ -1385,7 +1397,7 @@ end
 """Form the tensor-product representation of irreps `r1` and `r2`. Returns lowering/weight data, remaining multiplicities, and weight bookkeeping needed by CGT generation; both irreps must share symmetry `S` and scalar type `RT`."""
 function tensor_prod_reps(r1::Irep{S, NL, NZ, RT},
 	r2::Irep{S, NL, NZ, RT};
-	verbose=0) where {S, NL, NZ, RT<:Number}
+	verbose=VERBOSE[]) where {S, NL, NZ, RT<:Number}
 
     if verbose > 1 println("tensor_prod_reps from $(totxt(r1)), $(totxt(r2))") end
     r1_zvals = sorted_zvals(r1.Sz)
@@ -1420,8 +1432,10 @@ function tensor_prod_reps(r1::Irep{S, NL, NZ, RT},
         nSz[zval] = (dp+1, dp+inmult)
         dp += inmult
     end
-    if verbose > 1 println("Inner multiplicities are $(prod_inmult)") end 
-    if verbose > 1 println("Weight of product rep is $(nSz)") end 
+    if verbose > 1
+        println("Inner multiplicities are $(prod_inmult)")
+        println("Weight of product rep is $(nSz)")
+    end
     
     # Get the lowering operators of the product representation
     nSl = Tuple(Dict{NTuple{NZ, Int}, SparseMatrixCSC{RT}}() for _=1:NL)
@@ -1445,13 +1459,17 @@ function tensor_prod_reps(r1::Irep{S, NL, NZ, RT},
             # similar for edi, stf, edf (initial and final)
             winfo_init = prod_weight_info[zval_init]
             winfo_final = prod_weight_info[zval_final]
-            if verbose > 1 println("Info of $(zval_init) (initial weight) is $(winfo_init)") end
-            if verbose > 1 println("Info of $(zval_final) (final weight) is $(winfo_final)") end
+            if verbose > 1
+                println("Info of $(zval_init) (initial weight) is $(winfo_init)")
+                println("Info of $(zval_final) (final weight) is $(winfo_final)")
+            end
             for ((z1, z2), (sti, edi)) in winfo_init
                 z1c = Tuple(z1 .- dzs[opi])
                 if haskey(winfo_final, (z1c, z2))
-                    if verbose > 1 println("From ($(z1), $(z2)) to ($(z1c), $(z2))") end
-                    if verbose > 1 println("Lowering in the first space") end
+                    if verbose > 1
+                        println("From ($(z1), $(z2)) to ($(z1c), $(z2))")
+                        println("Lowering in the first space")
+                    end
                     stf, edf = winfo_final[(z1c, z2)]
                     r1_lop = r1.Sl[opi][z1]
                     if verbose > 2 println("Lowering operator of the first space is $(r1_lop)") end
@@ -1463,8 +1481,10 @@ function tensor_prod_reps(r1::Irep{S, NL, NZ, RT},
 
                 z2c = Tuple(z2 .- dzs[opi])
                 if haskey(winfo_final, (z1, z2c))
-                    if verbose > 1 println("From ($(z1), $(z2)) to ($(z1), $(z2c))") end
-                    if verbose > 1 println("Lowering in the second space") end
+                    if verbose > 1
+                        println("From ($(z1), $(z2)) to ($(z1), $(z2c))")
+                        println("Lowering in the second space")
+                    end
                     stf, edf = winfo_final[(z1, z2c)]
                     r2_lop = r2.Sl[opi][z2]
                     if verbose > 2 println("Lowering operator of the second space is $(r2_lop)") end

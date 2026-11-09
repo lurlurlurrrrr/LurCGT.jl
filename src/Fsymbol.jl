@@ -34,7 +34,7 @@ end
 # Obtain the F-symbol by contracting (non-normalized) CGTs 
 # maximal weight state part only
 """
-    getNsave_Fsymbol(::Type{S}, ::Type{CT}, in1, in2, in3, out; verbose=0) -> Fsymbol
+    getNsave_Fsymbol(::Type{S}, ::Type{CT}, in1, in2, in3, out; verbose=VERBOSE[]) -> Fsymbol
 
 Load or compute the associativity matrix for `(in1 x in2) x in3 -> out`.
 
@@ -53,7 +53,7 @@ function getNsave_Fsymbol(::Type{S},
     in2::NTuple{NZ, Int},
     in3::NTuple{NZ, Int},
     out::NTuple{NZ, Int};
-    verbose=0) where {S<:NonabelianSymm, CT<:Number, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, CT<:Number, NZ}
     @assert NZ == nzops(S)
     loaded = load_Fsymbol_sqlite(S, CT, in1, in2, in3, out)
     if !isnothing(loaded) return loaded end
@@ -229,7 +229,7 @@ end
 
 # 3rd dimension of blk1 and 1st dimension of blk2_mw are contracted
 """
-    contractblks_mw(::Type{S}, blks1, blks2_mw, es; verbose=0)
+    contractblks_mw(::Type{S}, blks1, blks2_mw, es; verbose=VERBOSE[])
 
 Contract a CG3 block dictionary with a maximal-weight CG3 block dictionary.
 
@@ -243,7 +243,7 @@ function contractblks_mw(::Type{S},
     blks1::Dict{NTuple{3, NTuple{NZ, Int}}, Array{CT}}, 
     blks2_mw::Dict{NTuple{2, NTuple{NZ, Int}}, Array{CT, 3}}, 
     es::Bool;
-    verbose=0) where {S<:NonabelianSymm, CT<:Number, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, CT<:Number, NZ}
 
     # 3rd dimension of blk1 and 'ci'th dimension of blk2_mw are contracted
     ci = es ? 1 : 2
@@ -330,7 +330,7 @@ end
 # values are (a, b), where a is the multiplicity in in1 ⊗ in2 -> e
 # b is the multiplicity in e ⊗ in3 -> out
 """
-    find_espaces(::Type{S}, in1, in2, in3, out, ::Type{CT}; verbose=0)
+    find_espaces(::Type{S}, in1, in2, in3, out, ::Type{CT}; verbose=VERBOSE[])
 
 Find admissible intermediate qlabels for one side of an F-symbol.
 
@@ -344,7 +344,7 @@ function find_espaces(::Type{S},
     in3::NTuple{NZ, Int},
     out::NTuple{NZ, Int},
     ::Type{CT};
-    verbose=0) where {S<:NonabelianSymm, CT<:Number, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, CT<:Number, NZ}
     es = Vector{Tuple{NTuple{NZ, Int}, Tuple{Int, Int}}}()
     in12_out = getNsave_validout(S, minmax(in1, in2))
     for qlabel in in12_out.out_spaces

@@ -246,7 +246,7 @@ end
 
 function int128_sum_slice_irep_status(::Type{S},
     q::NTuple{NZ, Int};
-    verbose=0) where {S<:NonabelianSymm, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NZ}
 
     try
         rep_big = getNsave_irep(S, BigInt, q)
@@ -278,7 +278,7 @@ end
 function run_int128_cgt_sum_slice(::Type{S},
     n1::Int,
     n2::Int;
-    verbose=1) where {S<:NonabelianSymm}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm}
 
     n1_, n2_ = int128_sum_slice_normalize(n1, n2)
     pairs = int128_sum_slice_pairs(S, n1_, n2_)
@@ -376,7 +376,7 @@ end
 function fixedint_irep_status(::Type{S},
     ::Type{RT},
     q::NTuple{NZ, Int};
-    verbose=0) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}, NZ}
 
     rep_big = getNsave_irep(S, BigInt, q)
     try
@@ -422,7 +422,7 @@ end
 """Merge locally generated fixed-integer irrep rows for symmetry `S` into global SQLite storage. `clear_local_after` controls post-merge cleanup, `verbose` controls reporting, and `merge_fn` permits an alternate merge implementation. Returns the merge summary."""
 function merge_fixedint_ireps_to_global(::Type{S};
     clear_local_after::Bool=true,
-    verbose=1,
+    verbose=VERBOSE[],
     merge_fn=merge_table_to_global) where {S<:NonabelianSymm}
     return merge_fn(S, "irreps"; clear_local_after=clear_local_after, verbose=verbose)
 end
@@ -436,7 +436,7 @@ function update_fixedint_irrep_catalog(::Type{S},
     base_dir=fixedint_default_base_dir(),
     merge_local_ireps::Bool=false,
     merge_ireps_fn=merge_fixedint_ireps_to_global,
-    verbose=0) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}}
 
     NZ = nzops(S)
     trivial_q = ntuple(_ -> 0, NZ)
@@ -533,7 +533,7 @@ function run_fixedint_cgt_chunk(::Type{S},
     merge_local_ireps::Bool=false,
     merge_ireps_fn=merge_fixedint_ireps_to_global,
     generate_cgt_fn=generate_every_CGT,
-    verbose=1) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Union{Int64, Int128}}
 
     catalog = if update_catalog
         update_fixedint_irrep_catalog(

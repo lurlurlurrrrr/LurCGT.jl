@@ -35,7 +35,7 @@ struct CGTQR{S<:NonabelianSymm, U, D, L, NZ}
 end
 
 """
-    getNsave_CGTQR(::Type{S<:AbelianSymm}, upsp, dnsp, leftlegs; save=true, verbose=0)
+    getNsave_CGTQR(::Type{S<:AbelianSymm}, upsp, dnsp, leftlegs; save=true, verbose=VERBOSE[])
 
 Return `nothing` for Abelian symmetries, where no nontrivial CGT basis-change
 matrix is needed for the QR split.
@@ -50,7 +50,7 @@ getNsave_CGTQR(::Type{S},
     dnsp::NTuple{D, NTuple{NZ, Int}},
     leftlegs;
     save=true,
-    verbose=0) where {S<:AbelianSymm, U, D, NZ} = nothing
+    verbose=VERBOSE[]) where {S<:AbelianSymm, U, D, NZ} = nothing
 
 """
     get_qr_split_qs(::Type{S}, left_up, left_dn, right_up, right_dn) -> Tuple
@@ -82,7 +82,7 @@ function get_qr_split_qs(::Type{S},
 end
 
 """
-    get_qr_split_sector_vectors(::Type{S}, left_up, left_dn, right_up, right_dn, q; verbose=0)
+    get_qr_split_sector_vectors(::Type{S}, left_up, left_dn, right_up, right_dn, q; verbose=VERBOSE[])
 
 Build the X-symbol block that maps one split-bond sector into the original CGT
 outer-multiplicity basis.
@@ -103,7 +103,7 @@ function get_qr_split_sector_vectors(::Type{S},
     right_up::NTuple{UR, NTuple{NZ, Int}},
     right_dn::NTuple{DR, NTuple{NZ, Int}},
     q::NTuple{NZ, Int};
-    verbose=0) where {S<:NonabelianSymm, UL, DL, UR, DR, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, UL, DL, UR, DR, NZ}
 
     left_dn_q = stable_sort_tuple((left_dn..., q))
     right_up_q = stable_sort_tuple((q, right_up...))
@@ -123,7 +123,7 @@ function get_qr_split_sector_vectors(::Type{S},
 end
 
 """
-    get_qr_split_basis_matrix(::Type{S}, upsp, dnsp, leftlegs; verbose=0)
+    get_qr_split_basis_matrix(::Type{S}, upsp, dnsp, leftlegs; verbose=VERBOSE[])
         -> (basis_rows, bond_sps)
 
 Construct the full non-Abelian CGT basis-change matrix for a QR split.
@@ -144,7 +144,7 @@ function get_qr_split_basis_matrix(::Type{S},
     upsp::NTuple{U, NTuple{NZ, Int}},
     dnsp::NTuple{D, NTuple{NZ, Int}},
     leftlegs::NTuple{L, Int};
-    verbose=0) where {S<:NonabelianSymm, U, D, NZ, L}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, U, D, NZ, L}
 
     @assert issorted(upsp)
     @assert issorted(dnsp)
@@ -177,7 +177,7 @@ function get_qr_split_basis_matrix(::Type{S},
 end
 
 """
-    getNsave_CGTQR(::Type{S<:NonabelianSymm}, upsp, dnsp, leftlegs; save=true, verbose=0)
+    getNsave_CGTQR(::Type{S<:NonabelianSymm}, upsp, dnsp, leftlegs; save=true, verbose=VERBOSE[])
         -> CGTQR
 
 Load or compute the CGT-only basis data for a symmetry-respecting QR split.
@@ -198,11 +198,11 @@ function getNsave_CGTQR(::Type{S},
     dnsp::NTuple{D, NTuple{NZ, Int}},
     leftlegs;
     save=true,
-    verbose=0) where {S<:NonabelianSymm, U, D, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, U, D, NZ}
 
     @assert issorted(upsp) && issorted(dnsp)
     upsp, dnsp, leftlegs = standardize_spaces_and_legs(S, upsp, dnsp, leftlegs, true)
-    getNsave_CGTQR_stan(S, upsp, dnsp, leftlegs; save, verbose)
+    getNsave_CGTQR_stan(S, upsp, dnsp, leftlegs; save, verbose=VERBOSE[])
 end
 
 """
@@ -226,7 +226,7 @@ function getNsave_CGTQR_stan(::Type{S},
     dnsp::NTuple{D, NTuple{NZ, Int}},
     leftlegs;
     save,
-    verbose) where {S<:NonabelianSymm, U, D, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, U, D, NZ}
 
     if length(leftlegs) == 0
         return true

@@ -38,7 +38,7 @@ end
 
 # Obtain the CG3Flip object by contracting CG3 with 1j-symbol
 """
-    getNsave_cg3flip(::Type{S}, ::Type{RT}, ::Type{CT}, incom_spaces, out_space; verbose=0) -> CG3Flip
+    getNsave_cg3flip(::Type{S}, ::Type{RT}, ::Type{CT}, incom_spaces, out_space; verbose=VERBOSE[]) -> CG3Flip
 
 Load or compute the basis transform obtained by flipping one CG3 leg through a
 1j tensor.
@@ -56,7 +56,7 @@ function getNsave_cg3flip(::Type{S},
     ::Type{CT},
     incom_spaces::NTuple{2, NTuple{NZ, Int}},
     out_space::NTuple{NZ, Int};
-    verbose=0) where {S<:NonabelianSymm, NZ, RT<:Number, CT<:Number}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NZ, RT<:Number, CT<:Number}
 
     # Try to load from file, use it if exists
     @assert NZ == nzops(S)
@@ -103,7 +103,7 @@ function cg3flip_rightnormalized(cg3flip::CG3Flip{S, CT, NZ}) where {S<:Nonabeli
 end
 
 """
-    contract_blks(::Type{S}, oblk, blk1j, nblk, om; verbose=0)
+    contract_blks(::Type{S}, oblk, blk1j, nblk, om; verbose=VERBOSE[])
 
 Contract original CG3, 1j, and flipped CG3 maximal-weight blocks.
 
@@ -115,7 +115,7 @@ function contract_blks(::Type{S},
     oblk::Dict{NTuple{2, NTuple{NZ, Int}}, Array{CT, 3}},
     blk1j::Dict{NTuple{2, NTuple{NZ, Int}}, Array{CT}},
     nblk::Dict{NTuple{2, NTuple{NZ, Int}}, Array{CT, 3}},
-    om::Int; verbose=0) where {S<:NonabelianSymm, CT<:Number, NZ}
+    om::Int; verbose=VERBOSE[]) where {S<:NonabelianSymm, CT<:Number, NZ}
 
     flip_arr = zeros(CT, om, om)
 

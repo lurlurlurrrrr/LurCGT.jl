@@ -283,16 +283,6 @@ function determine_last(::Type{SO{N}}, z1::Int, z2::Int) where N
 end
 
 """
-    preprocess(::Type{SO{N}}, qlabel::Vector{Int}) -> Vector{Int}
-
-Normalize an SO(N) qlabel before tableau construction.
-
-`qlabel` is copied and transformed into the column-count convention used by the
-crystal code. Odd SO(N) halves the final doubled spin coordinate. Even SO(N)
-rewrites the last two coordinates into ordered spinor-column counts.
-"""
-# Weight comparision, inputs are a form of shape of the Young tableau
-"""
     less_weight(::Type{SO{N}}, w1::NTuple{div(N,2), Int}, w2::NTuple{div(N,2), Int}) -> Bool
 
 Order SO(N) weight tuples for deterministic sector traversal.

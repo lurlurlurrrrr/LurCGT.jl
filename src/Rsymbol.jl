@@ -29,7 +29,7 @@ struct Rsymbol{S<:NonabelianSymm, CT, NZ}
 end
 
 """
-    getNsave_Rsymbol(::Type{S}, ::Type{CT}, in, out; verbose=0) -> Rsymbol
+    getNsave_Rsymbol(::Type{S}, ::Type{CT}, in, out; verbose=VERBOSE[]) -> Rsymbol
 
 Load or compute the exchange matrix for the degenerate fusion `in x in -> out`.
 
@@ -44,7 +44,7 @@ function getNsave_Rsymbol(::Type{S},
     ::Type{CT},
     in::NTuple{NZ, Int},
     out::NTuple{NZ, Int};
-    verbose=0) where {S<:NonabelianSymm, CT<:Number, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, CT<:Number, NZ}
 
     @assert NZ == nzops(S)
     # If output is trivial representation, get it from 1jsym function

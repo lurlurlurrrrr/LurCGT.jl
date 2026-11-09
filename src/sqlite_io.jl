@@ -343,7 +343,7 @@ controls reporting. Callers must use a package-schema table name. This is a
 local write; global data is updated later by merge/finalize operations.
 """
 function save_object_sqlite(::Type{S}, table_name::String, key::String, obj;
-                           verbose=0) where {S<:NonabelianSymm}
+                           verbose=VERBOSE[]) where {S<:NonabelianSymm}
     db = get_sqlite_db(S, :local)
     data = serialize_object(obj)
     DBInterface.execute(db,
@@ -360,7 +360,7 @@ Returns `nothing` for a missing key; `verbose` controls hit/miss reporting, and
 non-SQLite serialization/database errors propagate.
 """
 function load_object_sqlite(::Type{S}, table_name::String, key::String;
-                           verbose=0) where {S<:NonabelianSymm}
+                           verbose=VERBOSE[]) where {S<:NonabelianSymm}
     for location in (:global, :local)
         try
             db = get_sqlite_db(S, location)
@@ -389,7 +389,7 @@ end
 """Internal write-through helper: persist `obj` under `db_key` then update in-memory `cache` under `(CRYSTAL_BASIS_VERSION, cache_key)` and `cache_lock`. `table_name` and `S` select the SQLite table; `verbose` is forwarded to the write."""
 function _cached_save(::Type{S}, table_name::String, db_key::String, cache_key::Tuple, obj,
                       cache::LRU, cache_lock::ReentrantLock;
-                      verbose=0) where {S<:NonabelianSymm}
+                      verbose=VERBOSE[]) where {S<:NonabelianSymm}
     save_object_sqlite(S, table_name, db_key, obj; verbose)
     versioned_key = (CRYSTAL_BASIS_VERSION, cache_key)
     Base.lock(cache_lock) do
@@ -401,7 +401,7 @@ end
 """Internal read-through helper: look up `(CRYSTAL_BASIS_VERSION, cache_key)` in `cache` under `cache_lock`; on a miss, obtain a SQLite key from `db_key_func`, load from `table_name` for `S`, and cache a successful result. `verbose` is forwarded to the storage lookup."""
 function _cached_load(db_key_func::F, ::Type{S}, table_name::String, cache_key::Tuple,
                       cache::LRU, cache_lock::ReentrantLock;
-                      verbose=0) where {F, S<:NonabelianSymm}
+                      verbose=VERBOSE[]) where {F, S<:NonabelianSymm}
     versioned_key = (CRYSTAL_BASIS_VERSION, cache_key)
     # 1. Check cache
     cached = Base.lock(cache_lock) do
@@ -566,14 +566,14 @@ cg3flip_cache_key(::Type{S},
 
 # --- Irep ---
 
-function save_irep_sqlite(rep::Irep{S, NL, NZ, RT}; verbose=0) where {S, NL, NZ, RT}
+function save_irep_sqlite(rep::Irep{S, NL, NZ, RT}; verbose=VERBOSE[]) where {S, NL, NZ, RT}
     key = irep_key(S, RT, rep.qlabel)
     cache_key = irep_cache_key(S, RT, rep.qlabel)
     _cached_save(S, "irreps", key, cache_key, rep, IREP_CACHE, IREP_CACHE_LOCK; verbose)
 end
 
 function load_irep_sqlite(::Type{S}, ::Type{RT}, qlabel::NTuple{NZ, Int};
-                          verbose=0) where {S<:NonabelianSymm, RT<:Number, NZ}
+                          verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number, NZ}
     cache_key = irep_cache_key(S, RT, qlabel)
     return _cached_load(() -> irep_key(S, RT, qlabel), S, "irreps", cache_key, IREP_CACHE, IREP_CACHE_LOCK; verbose)
 end
@@ -582,7 +582,7 @@ end
 
 function save_cgt_sqlite(::Type{S},
     cgt::CGT{S, CT, NZ, N};
-    verbose=0) where {S<:NonabelianSymm, CT<:Number, NZ, N}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, CT<:Number, NZ, N}
     key = cgt_key(S, CT, cgt.qlabels)
     cache_key = cgt_cache_key(S, CT, cgt.qlabels)
     _cached_save(S, "cgt", key, cache_key, cgt, CGT_CACHE, CGT_CACHE_LOCK; verbose)
@@ -591,18 +591,18 @@ end
 function load_cgt_sqlite(::Type{S},
     ::Type{CT},
     qlabels::NTuple{N, NTuple{NZ,Int}};
-    verbose=0) where {S<:NonabelianSymm, CT, NZ, N}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, CT, NZ, N}
     cache_key = cgt_cache_key(S, CT, qlabels)
     return _cached_load(() -> cgt_key(S, CT, qlabels), S, "cgt", cache_key, CGT_CACHE, CGT_CACHE_LOCK; verbose)
 end
 
 # --- Fsymbol ---
 
-function save_Fsymbol_sqlite(fsym::Fsymbol{S, CT, NZ}; verbose=0) where {S<:NonabelianSymm, CT, NZ}
+function save_Fsymbol_sqlite(fsym::Fsymbol{S, CT, NZ}; verbose=VERBOSE[]) where {S<:NonabelianSymm, CT, NZ}
     save_Fsymbol_sqlite(S, fsym; verbose)
 end
 
-function save_Fsymbol_sqlite(::Type{S}, fsym; verbose=0) where {S<:NonabelianSymm}
+function save_Fsymbol_sqlite(::Type{S}, fsym; verbose=VERBOSE[]) where {S<:NonabelianSymm}
     CT = eltype(fsym)
     key = fsymbol_key(S, CT, fsym.in1, fsym.in2, fsym.in3, fsym.out)
     cache_key = fsymbol_cache_key(S, CT, fsym.in1, fsym.in2, fsym.in3, fsym.out)
@@ -611,18 +611,18 @@ end
 
 function load_Fsymbol_sqlite(::Type{S}, ::Type{CT}, in1::NTuple{NZ,Int}, in2::NTuple{NZ,Int},
                             in3::NTuple{NZ,Int}, out::NTuple{NZ,Int};
-                            verbose=0) where {S<:NonabelianSymm, CT, NZ}
+                            verbose=VERBOSE[]) where {S<:NonabelianSymm, CT, NZ}
     cache_key = fsymbol_cache_key(S, CT, in1, in2, in3, out)
     return _cached_load(() -> fsymbol_key(S, CT, in1, in2, in3, out), S, "fsymbol", cache_key, FSYMBOL_CACHE, FSYMBOL_CACHE_LOCK; verbose)
 end
 
 # --- Rsymbol ---
 
-function save_Rsymbol_sqlite(rsym::Rsymbol{S, CT, NZ}; verbose=0) where {S<:NonabelianSymm, CT, NZ}
+function save_Rsymbol_sqlite(rsym::Rsymbol{S, CT, NZ}; verbose=VERBOSE[]) where {S<:NonabelianSymm, CT, NZ}
     save_Rsymbol_sqlite(S, rsym; verbose)
 end
 
-function save_Rsymbol_sqlite(::Type{S}, rsym; verbose=0) where {S<:NonabelianSymm}
+function save_Rsymbol_sqlite(::Type{S}, rsym; verbose=VERBOSE[]) where {S<:NonabelianSymm}
     CT = eltype(rsym)
     key = rsymbol_key(S, CT, rsym.in, rsym.out)
     cache_key = rsymbol_cache_key(S, CT, rsym.in, rsym.out)
@@ -630,18 +630,18 @@ function save_Rsymbol_sqlite(::Type{S}, rsym; verbose=0) where {S<:NonabelianSym
 end
 
 function load_Rsymbol_sqlite(::Type{S}, ::Type{CT}, in::NTuple{NZ,Int}, out::NTuple{NZ,Int};
-                            verbose=0) where {S<:NonabelianSymm, CT, NZ}
+                            verbose=VERBOSE[]) where {S<:NonabelianSymm, CT, NZ}
     cache_key = rsymbol_cache_key(S, CT, in, out)
     return _cached_load(() -> rsymbol_key(S, CT, in, out), S, "rsymbol", cache_key, RSYMBOL_CACHE, RSYMBOL_CACHE_LOCK; verbose)
 end
 
 # --- Xsymbol ---
 
-function save_Xsymbol_sqlite(xsym::Xsymbol{S, U1, D1, U2, D2, NZ, M}; verbose=0) where {S<:NonabelianSymm, U1, D1, U2, D2, NZ, M}
+function save_Xsymbol_sqlite(xsym::Xsymbol{S, U1, D1, U2, D2, NZ, M}; verbose=VERBOSE[]) where {S<:NonabelianSymm, U1, D1, U2, D2, NZ, M}
     save_Xsymbol_sqlite(S, xsym; verbose)
 end
 
-function save_Xsymbol_sqlite(::Type{S}, xsym; verbose=0) where {S<:NonabelianSymm}
+function save_Xsymbol_sqlite(::Type{S}, xsym; verbose=VERBOSE[]) where {S<:NonabelianSymm}
     key = xsymbol_key(S, xsym.up1sp, xsym.dn1sp, xsym.up2sp, xsym.dn2sp, xsym.legs1, xsym.legs2)
     cache_key = xsymbol_cache_key(S, xsym.up1sp, xsym.dn1sp, xsym.up2sp, xsym.dn2sp, xsym.legs1, xsym.legs2)
     _cached_save(S, "xsymbol", key, cache_key, xsym, XSYMBOL_CACHE, XSYMBOL_CACHE_LOCK; verbose)
@@ -654,18 +654,18 @@ function load_Xsymbol_sqlite(::Type{S},
     dn2::NTuple{D2, NTuple{NZ, Int}},
     legs1::NTuple{M, Int},
     legs2::NTuple{M, Int};
-    verbose=0) where {S<:NonabelianSymm, NZ, U1, D1, U2, D2, M}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NZ, U1, D1, U2, D2, M}
     cache_key = xsymbol_cache_key(S, up1, dn1, up2, dn2, legs1, legs2)
     return _cached_load(() -> xsymbol_key(S, up1, dn1, up2, dn2, legs1, legs2), S, "xsymbol", cache_key, XSYMBOL_CACHE, XSYMBOL_CACHE_LOCK; verbose)
 end
 
 # --- OMList ---
 
-function save_omlist_sqlite(omlist::OMList{S, N, NZ, M1, M2}; verbose=0) where {S<:NonabelianSymm, N, NZ, M1, M2}
+function save_omlist_sqlite(omlist::OMList{S, N, NZ, M1, M2}; verbose=VERBOSE[]) where {S<:NonabelianSymm, N, NZ, M1, M2}
     save_omlist_sqlite(S, omlist; verbose)
 end
 
-function save_omlist_sqlite(::Type{S}, omlist; verbose=0) where {S<:NonabelianSymm}
+function save_omlist_sqlite(::Type{S}, omlist; verbose=VERBOSE[]) where {S<:NonabelianSymm}
     key = omlist_key(S, omlist.incom_spaces, omlist.out_space)
     cache_key = omlist_cache_key(S, omlist.incom_spaces, omlist.out_space)
     _cached_save(S, "omlist", key, cache_key, omlist, OMLIST_CACHE, OMLIST_CACHE_LOCK; verbose)
@@ -674,18 +674,18 @@ end
 function load_omlist_sqlite(::Type{S},
     qs::NTuple{N, NTuple{NZ, Int}},
     outsp::NTuple{NZ, Int};
-    verbose=0) where {S<:NonabelianSymm, N, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, N, NZ}
     cache_key = omlist_cache_key(S, qs, outsp)
     return _cached_load(() -> omlist_key(S, qs, outsp), S, "omlist", cache_key, OMLIST_CACHE, OMLIST_CACHE_LOCK; verbose)
 end
 
 # --- ValidOuts ---
 
-function save_validout_sqlite(validout::ValidOuts{S, N, NZ}; verbose=0) where {S<:NonabelianSymm, N, NZ}
+function save_validout_sqlite(validout::ValidOuts{S, N, NZ}; verbose=VERBOSE[]) where {S<:NonabelianSymm, N, NZ}
     save_validout_sqlite(S, validout; verbose)
 end
 
-function save_validout_sqlite(::Type{S}, validout; verbose=0) where {S<:NonabelianSymm}
+function save_validout_sqlite(::Type{S}, validout; verbose=VERBOSE[]) where {S<:NonabelianSymm}
     key = validout_key(S, validout.incom_spaces)
     cache_key = validout_cache_key(S, validout.incom_spaces)
     _cached_save(S, "validout", key, cache_key, validout, VALIDOUT_CACHE, VALIDOUT_CACHE_LOCK; verbose)
@@ -693,18 +693,18 @@ end
 
 function load_validout_sqlite(::Type{S},
     qs::NTuple{N, NTuple{NZ, Int}};
-    verbose=0) where {S<:NonabelianSymm, N, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, N, NZ}
     cache_key = validout_cache_key(S, qs)
     return _cached_load(() -> validout_key(S, qs), S, "validout", cache_key, VALIDOUT_CACHE, VALIDOUT_CACHE_LOCK; verbose)
 end
 
 # --- CGTperm ---
 
-function save_CGTperm_sqlite(cgtperm::CGTperm{S, U, D, N, NZ}; verbose=0) where {S<:NonabelianSymm, U, D, N, NZ}
+function save_CGTperm_sqlite(cgtperm::CGTperm{S, U, D, N, NZ}; verbose=VERBOSE[]) where {S<:NonabelianSymm, U, D, N, NZ}
     save_CGTperm_sqlite(S, cgtperm; verbose)
 end
 
-function save_CGTperm_sqlite(::Type{S}, cgtperm; verbose=0) where {S<:NonabelianSymm}
+function save_CGTperm_sqlite(::Type{S}, cgtperm; verbose=VERBOSE[]) where {S<:NonabelianSymm}
     key = cgtperm_key(S, cgtperm.upsp, cgtperm.dnsp, cgtperm.perm)
     cache_key = cgtperm_cache_key(S, cgtperm.upsp, cgtperm.dnsp, cgtperm.perm)
     _cached_save(S, "cgtperm", key, cache_key, cgtperm, CGTPERM_CACHE, CGTPERM_CACHE_LOCK; verbose)
@@ -714,18 +714,18 @@ function load_CGTperm_sqlite(::Type{S},
     upsp::NTuple{U, NTuple{NZ, Int}},
     dnsp::NTuple{D, NTuple{NZ, Int}},
     perm::NTuple{N, Int};
-    verbose=0) where {S<:NonabelianSymm, U, D, N, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, U, D, N, NZ}
     cache_key = cgtperm_cache_key(S, upsp, dnsp, perm)
     return _cached_load(() -> cgtperm_key(S, upsp, dnsp, perm), S, "cgtperm", cache_key, CGTPERM_CACHE, CGTPERM_CACHE_LOCK; verbose)
 end
 
 # --- Conjperm ---
 
-function save_Conjperm_sqlite(conjperm::Conjperm{S, U, NZ}; verbose=0) where {S<:NonabelianSymm, U, NZ}
+function save_Conjperm_sqlite(conjperm::Conjperm{S, U, NZ}; verbose=VERBOSE[]) where {S<:NonabelianSymm, U, NZ}
     save_Conjperm_sqlite(S, conjperm; verbose)
 end
 
-function save_Conjperm_sqlite(::Type{S}, conjperm; verbose=0) where {S<:NonabelianSymm}
+function save_Conjperm_sqlite(::Type{S}, conjperm; verbose=VERBOSE[]) where {S<:NonabelianSymm}
     key = conjperm_key(S, conjperm.upsp)
     cache_key = conjperm_cache_key(S, conjperm.upsp)
     _cached_save(S, "conjperm", key, cache_key, conjperm, CONJPERM_CACHE, CONJPERM_CACHE_LOCK; verbose)
@@ -733,18 +733,18 @@ end
 
 function load_Conjperm_sqlite(::Type{S},
     upsp::NTuple{U, NTuple{NZ, Int}};
-    verbose=0) where {S<:NonabelianSymm, U, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, U, NZ}
     cache_key = conjperm_cache_key(S, upsp)
     return _cached_load(() -> conjperm_key(S, upsp), S, "conjperm", cache_key, CONJPERM_CACHE, CONJPERM_CACHE_LOCK; verbose)
 end
 
 # --- CGTSVD ---
 
-function save_CGTSVD_sqlite(cgtsvd::CGTSVD{S, U, D, L, NZ}; verbose=0) where {S<:NonabelianSymm, U, D, L, NZ}
+function save_CGTSVD_sqlite(cgtsvd::CGTSVD{S, U, D, L, NZ}; verbose=VERBOSE[]) where {S<:NonabelianSymm, U, D, L, NZ}
     save_CGTSVD_sqlite(S, cgtsvd; verbose)
 end
 
-function save_CGTSVD_sqlite(::Type{S}, cgtsvd; verbose=0) where {S<:NonabelianSymm}
+function save_CGTSVD_sqlite(::Type{S}, cgtsvd; verbose=VERBOSE[]) where {S<:NonabelianSymm}
     key = cgtsvd_key(S, cgtsvd.upsp, cgtsvd.dnsp, cgtsvd.leftlegs)
     cache_key = cgtsvd_cache_key(S, cgtsvd.upsp, cgtsvd.dnsp, cgtsvd.leftlegs)
     _cached_save(S, "cgtsvd", key, cache_key, cgtsvd, CGTSVD_CACHE, CGTSVD_CACHE_LOCK; verbose)
@@ -754,7 +754,7 @@ function load_CGTSVD_sqlite(::Type{S},
     upsp::NTuple{U, NTuple{NZ, Int}},
     dnsp::NTuple{D, NTuple{NZ, Int}},
     leftlegs::NTuple{L, Int};
-    verbose=0) where {S<:NonabelianSymm, U, D, L, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, U, D, L, NZ}
     cache_key = cgtsvd_cache_key(S, upsp, dnsp, leftlegs)
     return _cached_load(() -> cgtsvd_key(S, upsp, dnsp, leftlegs), S, "cgtsvd", cache_key, CGTSVD_CACHE, CGTSVD_CACHE_LOCK; verbose)
 end
@@ -763,7 +763,7 @@ end
 
 function save_cg3flip_sqlite(::Type{S},
     cg3flip::CG3Flip{S, CT, NZ};
-    verbose=0) where {S<:NonabelianSymm, CT<:Number, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, CT<:Number, NZ}
     key = cg3flip_key(S, CT, cg3flip.incom_spaces, cg3flip.out_space)
     cache_key = cg3flip_cache_key(S, CT, cg3flip.incom_spaces, cg3flip.out_space)
     _cached_save(S, "cg3flip", key, cache_key, cg3flip, CG3FLIP_CACHE, CG3FLIP_CACHE_LOCK; verbose)
@@ -773,7 +773,7 @@ function load_cg3flip_sqlite(::Type{S},
     ::Type{CT},
     incom_spaces::NTuple{2, NTuple{NZ, Int}},
     out_space::NTuple{NZ, Int};
-    verbose=0) where {S<:NonabelianSymm, CT<:Number, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, CT<:Number, NZ}
     cache_key = cg3flip_cache_key(S, CT, incom_spaces, out_space)
     return _cached_load(() -> cg3flip_key(S, CT, incom_spaces, out_space), S, "cg3flip", cache_key, CG3FLIP_CACHE, CG3FLIP_CACHE_LOCK; verbose)
 end
@@ -783,7 +783,7 @@ end
 # ============================================================================
 
 """
-    merge_table_to_global(S, table_name[, filter_prefix]; clear_local_after=true, verbose=1)
+    merge_table_to_global(S, table_name[, filter_prefix]; clear_local_after=true, verbose=VERBOSE[])
 
 Merge entries for one SQLite table from the current process-local database into
 the shared global database for symmetry `S`.
@@ -801,7 +801,7 @@ Returns a named tuple `(merged=..., skipped=...)`.
 """
 function merge_table_to_global(::Type{S}, table_name::String, filter_prefix::String="";
                                clear_local_after::Bool=true,
-                               verbose=1) where {S<:NonabelianSymm}
+                               verbose=VERBOSE[]) where {S<:NonabelianSymm}
     local_db = get_sqlite_db(S, :local)
     global_db = get_sqlite_merge_global_db(S)
 
@@ -870,7 +870,7 @@ function merge_table_to_global(::Type{S}, table_name::String, filter_prefix::Str
 end
 
 """
-    merge_all_to_global(S; tables=collect(SQLITE_TABLES), clear_local_after=true, verbose=1)
+    merge_all_to_global(S; tables=collect(SQLITE_TABLES), clear_local_after=true, verbose=VERBOSE[])
 
 Merge all selected SQLite cache tables from the current process-local database
 into the shared global database for symmetry `S`.
@@ -885,7 +885,7 @@ Returns a named tuple `(merged=..., skipped=...)` with totals across tables.
 function merge_all_to_global(::Type{S};
                              tables=collect(SQLITE_TABLES),
                              clear_local_after::Bool=true,
-                             verbose=1) where {S<:NonabelianSymm}
+                             verbose=VERBOSE[]) where {S<:NonabelianSymm}
     total_merged = 0
     total_skipped = 0
 
@@ -902,7 +902,7 @@ function merge_all_to_global(::Type{S};
 end
 
 """
-    merge_all(S; tables=collect(SQLITE_TABLES), clear_local_after=true, verbose=1)
+    merge_all(S; tables=collect(SQLITE_TABLES), clear_local_after=true, verbose=VERBOSE[])
 
 Merge every selected local SQLite cache table into the global database for
 symmetry `S`.
@@ -913,7 +913,7 @@ keyword arguments, locking behavior, and return value.
 merge_all(::Type{S};
           tables=collect(SQLITE_TABLES),
           clear_local_after::Bool=true,
-          verbose=1) where {S<:NonabelianSymm} =
+          verbose=VERBOSE[]) where {S<:NonabelianSymm} =
     merge_all_to_global(S; tables, clear_local_after, verbose)
 
 # ============================================================================
@@ -1038,7 +1038,7 @@ function _local_sqlite_db_paths(root::AbstractString)
     return sort!(collect(paths))
 end
 
-function _delete_sqlite_file_set(path::AbstractString; verbose=0)
+function _delete_sqlite_file_set(path::AbstractString; verbose=VERBOSE[])
     deleted_any = false
     for file in _sqlite_file_set(path)
         isfile(file) || continue
@@ -1059,7 +1059,7 @@ one-element vector containing the deleted base path or an empty vector.
 """
 function delete_current_local_sqlite_db(::Type{S}; env::AbstractDict=ENV,
                                         process_id::AbstractString=process_local_id(),
-                                        verbose=0) where {S<:NonabelianSymm}
+                                        verbose=VERBOSE[]) where {S<:NonabelianSymm}
     path = sqlite_db_path(S, :local; env, process_id)
     return _delete_sqlite_file_set(path; verbose) ? String[path] : String[]
 end
@@ -1073,7 +1073,7 @@ deletion. This is destructive but never deletes the source/global database;
 local mode returns an empty vector without changes.
 """
 function delete_active_global_sqlite_copy(::Type{S}; env::AbstractDict=ENV,
-                                          verbose=0) where {S<:NonabelianSymm}
+                                          verbose=VERBOSE[]) where {S<:NonabelianSymm}
     sqlite_run_mode(env) == "server" || return String[]
     path = sqlite_db_path(S, :global; env)
     path == sqlite_db_source_path(S, :global; env) && return String[]
@@ -1081,7 +1081,7 @@ function delete_active_global_sqlite_copy(::Type{S}; env::AbstractDict=ENV,
 end
 
 """
-    delete_closed_local_sqlite_dbs(; env=ENV, verbose=0)
+    delete_closed_local_sqlite_dbs(; env=ENV, verbose=VERBOSE[])
 
 Delete local SQLite database files that are not currently open in this Julia
 process.
@@ -1094,7 +1094,7 @@ this process are skipped.
 Returns the base `.db` paths that were removed.  This only considers local
 databases; global databases are never deleted.
 """
-function delete_closed_local_sqlite_dbs(; env::AbstractDict=ENV, verbose=0)
+function delete_closed_local_sqlite_dbs(; env::AbstractDict=ENV, verbose=VERBOSE[])
     root = sqlite_local_dir(env)
     opened_paths = _opened_local_sqlite_paths()
     deleted_paths = String[]
@@ -1114,7 +1114,7 @@ function delete_closed_local_sqlite_dbs(; env::AbstractDict=ENV, verbose=0)
 end
 
 """
-    finalize_sqlite!(S; tables=collect(SQLITE_TABLES), cleanup=true, verbose=1)
+    finalize_sqlite!(S; tables=collect(SQLITE_TABLES), cleanup=true, verbose=VERBOSE[])
 
 Merge the current process-local SQLite cache for symmetry `S` into the merge
 target global database, close SQLite connections, and optionally delete
@@ -1129,7 +1129,7 @@ successful merge.
 function finalize_sqlite!(::Type{S};
                           tables=collect(SQLITE_TABLES),
                           cleanup::Bool=true,
-                          verbose=1) where {S<:NonabelianSymm}
+                          verbose=VERBOSE[]) where {S<:NonabelianSymm}
     result = merge_all_to_global(S; tables, clear_local_after=true, verbose)
 
     if cleanup
@@ -1142,13 +1142,13 @@ function finalize_sqlite!(::Type{S};
 end
 
 """
-    finalize_all_sqlite!(; cleanup=true, verbose=1, throw_errors=true, only_existing_local=true)
+    finalize_all_sqlite!(; cleanup=true, verbose=VERBOSE[], throw_errors=true, only_existing_local=true)
 
 Finalize every non-Abelian symmetry whose SQLite store was touched in this
 Julia process.
 """
 function finalize_all_sqlite!(; cleanup::Bool=true,
-                              verbose=1,
+                              verbose=VERBOSE[],
                               throw_errors::Bool=true,
                               only_existing_local::Bool=true)
     total_merged = 0

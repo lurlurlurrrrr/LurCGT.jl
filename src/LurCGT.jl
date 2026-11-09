@@ -14,6 +14,15 @@ using Combinatorics
 using TensorOperations
 using Nemo
 
+"""
+    VERBOSE::Base.RefValue{Int}
+
+Global default verbosity for LurCGT operations. Set `VERBOSE[]` to `0` for
+quiet operation or a positive integer to enable progressively detailed output.
+An individual function's `verbose` keyword still overrides this setting.
+"""
+const VERBOSE = Ref{Int}(0)
+
 include("Base.jl")
 
 # The exported API is the symmetry interface consumed directly by Telum.
@@ -28,5 +37,6 @@ export getNsave_Xsymbol, getNsave_Conjperm
 export getNsave_omlist, getNsave_validout, isabelian
 export nzops, remove_zeros, totxt, transf_basis!
 export to_float
+export VERBOSE
 
 end

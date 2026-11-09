@@ -26,6 +26,26 @@ struct Crystal_ops{S<:NonabelianSymm}
     ϵ::Dict{Tuple{Int, Int}, Int}
 end
 
+const _CRYSTAL_WEIGHT_DATA = Dict{DataType, Tuple{Vector{Vector{Int}}, Dict{Int, Int}}}()
+const _CRYSTAL_WEIGHT_DATA_LOCK = ReentrantLock()
+
+"""
+    _crystal_weight_data(::Type{S}) -> (weights, character_map)
+
+Return cached defining-representation weights and character indices for `S`.
+The cache owns these mutable results; callers must treat them as read-only.
+Initialization is synchronized because crystal generation may run concurrently.
+"""
+function _crystal_weight_data(::Type{S}) where {S<:NonabelianSymm}
+    lock(_CRYSTAL_WEIGHT_DATA_LOCK) do
+        return get!(_CRYSTAL_WEIGHT_DATA, S) do
+            weights = getsz_def_vec(S)::Vector{Vector{Int}}
+            charmap = crystal_chars_map(S)::Dict{Int, Int}
+            (weights, charmap)
+        end
+    end
+end
+
 """
     mw_crystal_qlabel(S, qlabel) -> CrystalVertex{S}
 
@@ -221,8 +241,7 @@ function get_weight(vertex::CrystalVertex{S}) where S <: NonabelianSymm
     cnt = get_count(vertex)
     NZ = nzops(S)
     # Supported alphabets store concrete integer z-coordinate lists.
-    szs = getsz_def_vec(S)::Vector{Vector{Int}}
-    chardict = crystal_chars_map(S)
+    szs, chardict = _crystal_weight_data(S)
     @assert length(szs[1]) == NZ
     weight = zeros(Int, NZ)
     for char in keys(cnt)

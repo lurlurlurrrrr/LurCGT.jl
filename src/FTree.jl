@@ -45,7 +45,7 @@ Base.copy(ftree::FTree{S}) where S<:NonabelianSymm =
     create_FTree(S, ftree.ins, ftree.outs, copy(ftree.coeff), copy(ftree.coeff_nfac), false)
 
 """
-    create_CG3cont(cont::FTree, new_ins, new_outs, new_coeffs, new_coeff_nfac, sortcheck; verbose=0)
+    create_CG3cont(cont::FTree, new_ins, new_outs, new_coeffs, new_coeff_nfac, sortcheck; verbose=VERBOSE[])
 
 Create a new CG3 contraction container of the same concrete family as `cont`.
 
@@ -59,7 +59,7 @@ create_CG3cont(cont::FTree{S, NI},
     new_coeffs::Dict{NTuple{M2, NTuple{NZ, Int}}, Array{BigInt, M1}},
     new_coeff_nfac::Dict{NTuple{M2, NTuple{NZ, Int}}, Rational{BigInt}},
     sortcheck::Bool;
-    verbose=0) where {S<:NonabelianSymm, NI, NZ, M1, M2} =
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NI, NZ, M1, M2} =
     create_FTree(S, new_ins, new_outs, new_coeffs, new_coeff_nfac, sortcheck)
 
 
@@ -99,7 +99,7 @@ function create_unit_FTree(omlist::OMList{S, N, NZ},
 end
 
 """
-    create_FTree(::Type{S}, ins, outs, coeff, coeff_nfac, sortcheck; verbose=0)
+    create_FTree(::Type{S}, ins, outs, coeff, coeff_nfac, sortcheck; verbose=VERBOSE[])
 
 Construct an exact fusion-tree linear combination.
 
@@ -114,7 +114,7 @@ function create_FTree(::Type{S},
     coeff::Dict{NTuple{M2, NTuple{NZ, Int}}, Array{BigInt, M1}},
     coeff_nfac::Dict{NTuple{M2, NTuple{NZ, Int}}, Rational{BigInt}},
     sortcheck::Bool;
-    verbose=0) where {S<:NonabelianSymm, N, NZ, M1, M2}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, N, NZ, M1, M2}
     @assert NZ == nzops(S); @assert N >= 1
     @assert M1 == max(N - 1, 0); @assert M2 == max(N - 2, 0)
 
@@ -134,8 +134,10 @@ function create_FTree(::Type{S},
             if verbose > 1 println("Processing intermediate space: ", interm_space) end
             if interm_space in keys_set
                 sz = size(coeff[interm_space])
-                if verbose > 1 println(sz) end
-                if verbose > 1 println(omlist.cg3_oms[i]) end
+                if verbose > 1
+                    println(sz)
+                    println(omlist.cg3_oms[i])
+                end
                 @assert sz == omlist.cg3_oms[i]
                 delete!(keys_set, interm_space)
             end
@@ -211,7 +213,7 @@ end
 # FTree in the argument is modified in place
 # However, the resulting FTree is different from the original one
 """
-    permute!(ftree::FTree, perm; verbose=0) -> FTree
+    permute!(ftree::FTree, perm; verbose=VERBOSE[]) -> FTree
 
 Permute incoming legs of a fusion tree by adjacent R/F recoupling moves.
 
@@ -221,7 +223,7 @@ The input coefficient dictionaries may be mutated during intermediate R-symbol
 application, and the returned `FTree` represents the permuted fusion basis.
 """
 function Base.permute!(FTree::FTree{S, N}, perm::NTuple{N, Int};
-    verbose=0) where {S<:NonabelianSymm, N}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, N}
 
     # If the permutation is already identity, return the FTree
     if perm == Tuple(1:N)
@@ -240,7 +242,7 @@ function Base.permute!(FTree::FTree{S, N}, perm::NTuple{N, Int};
 end
 
 """
-    permute_adjacent!(ftree::FTree, i1, i2; verbose=0) -> FTree
+    permute_adjacent!(ftree::FTree, i1, i2; verbose=VERBOSE[]) -> FTree
 
 Swap adjacent incoming legs `i1` and `i2 == i1 + 1`.
 
@@ -249,7 +251,7 @@ Interior swaps are implemented as R, then F, then R moves, producing a new
 fusion-tree coefficient object with updated incoming qlabel order.
 """
 function permute_adjacent!(FTree::FTree{S, N}, i1, i2;
-    verbose=0) where {S<:NonabelianSymm, N}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, N}
     @assert i2 == i1 + 1
     @assert i1 >= 1 && i2 <= N
     new_ins = (FTree.ins[1:i1-1]..., 
@@ -320,7 +322,7 @@ end
 
 # Apply R-symbol to the i-th CG3 in AbstractCG3contract type
 """
-    apply_Rsymbol!(CG3cont, i::Int, rsymiofunc; verbose=0) -> nothing
+    apply_Rsymbol!(CG3cont, i::Int, rsymiofunc; verbose=VERBOSE[]) -> nothing
 
 Apply an R-symbol to the `i`th CG3 position of an exact contraction container.
 
@@ -337,7 +339,7 @@ reduced with `arr_relprime`. The container's dictionaries are mutated in place.
 function apply_Rsymbol!(CG3cont::AbstractCG3contract{S, NI, NO, NZ},
     i::Int,
     rsymiofunc::Function; 
-    verbose=0) where {S<:NonabelianSymm, NI, NO, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NI, NO, NZ}
 
     @assert CG3cont.ins isa NTuple{NI, NTuple{NZ, Int}}
     @assert CG3cont.outs isa NTuple{NO, NTuple{NZ, Int}}
@@ -409,7 +411,7 @@ get_dict_param(::Type{<:FTree{S, N}}) where {S<:NonabelianSymm, N} = (N - 2, N -
 # Apply F-symbol to change the ith intermediate space
 # For fusion tree, it is applied to the i-th and (i+1)-th CG3s of the fusion tree
 """
-    apply_Fsymbol(CG3cont, new_ins, new_outs, i, backward, fsymiofunc; verbose=0, permute_updown=false)
+    apply_Fsymbol(CG3cont, new_ins, new_outs, i, backward, fsymiofunc; verbose=VERBOSE[], permute_updown=false)
 
 Apply an F-symbol recoupling move to change one intermediate space.
 
@@ -435,7 +437,7 @@ function apply_Fsymbol(CG3cont::AbstractCG3contract{S, NI, NO, NZ},
     i::Int,
     backward::Bool,
     fsymiofunc::Function;
-    verbose=0,
+    verbose=VERBOSE[],
     permute_updown=false) where {S<:NonabelianSymm, NZ, NI, NO}
 
     check_irange(typeof(CG3cont), i)
@@ -520,15 +522,19 @@ function apply_Fsymbol(CG3cont::AbstractCG3contract{S, NI, NO, NZ},
         arr_after = contract_ith(arr_before, backward ? fsym_mat' : fsym_mat, Val(i))
         nfac_after::Integer = comm_fac * fsym_nfac
 
-        if verbose > 1 println("After:"); display(arr_after) end
-        if verbose > 1 println("nfac_after: $(nfac_after)") end
+        if verbose > 1
+            println("After:"); display(arr_after)
+            println("nfac_after: $(nfac_after)")
+        end
 
         # Save the resulting array in the resulting CG3cont
         ii = 1
         intsplst_after = backward ? Fsymbol.es_list : Fsymbol.fs_list
         for (intsp, (om1, om2)) in intsplst_after
-            if verbose > 1 println("intsp = $(intsp)") end
-            if verbose > 1 println("om1, om2 = $(om1), $(om2)") end
+            if verbose > 1
+                println("intsp = $(intsp)")
+                println("om1, om2 = $(om1), $(om2)")
+            end
 
             iirange = ii:(ii + om1 * om2 - 1)
             idx = ((Colon() for _=1:i-1)..., iirange, (Colon() for _=i+2:AD)...)

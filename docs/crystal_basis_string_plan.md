@@ -1,17 +1,19 @@
-# Part 2: Introduce reduced words and string patterns
+# Part 2: Demazure enumeration and string lowering schedules
 
-Status: design proposal, split from the source review at LurCGT commit `d1f4176`.
+Status: revised design proposal following completion of part 1. Originally split
+from the source review at LurCGT commit `d1f4176`.
 No representation code or cache data is changed by these documents.
 
 This is one of three implementation plans:
 
 1. [Unified crystal representation](crystal_basis_irrep_plan.md).
-2. [Introduce reduced words and string patterns](crystal_basis_string_plan.md).
+2. [Demazure enumeration and string lowering schedules](crystal_basis_string_plan.md).
 3. [Numerical representations, symmetry integration, and caches](crystal_basis_integration_plan.md).
 
 ## Scope and dependencies
 
-Use reduced expressions of the longest Weyl element to label crystal vertices,
+Enumerate vertices through Demazure subsets, then use string coordinates for a
+fixed reduced expression of the longest Weyl element to label crystal vertices,
 order columns within each weight, and specify reproducible lowering schedules.
 Start with existing SU crystals, including a weight with multiplicity greater
 than one, before applying this machinery to the other models from part 1.
@@ -24,6 +26,67 @@ tables. New spin or exceptional support is not a prerequisite. Retain `Irep` and
 its sparse weight-block storage. Changes to ordering and numerical schedules
 belong here, after the vertex replacement, and require part 3's exact-arithmetic
 and cache activation gates before production use.
+
+## Current lowering-sequence assignment
+
+`get_irep_frommw` in `src/clebsch.jl` currently couples crystal discovery to
+numerical vector construction. Starting at the highest vertex, it processes a
+queue of newly discovered vertices and tries colors in ascending order.
+`det_getvector` checks whether the remaining monochromatic lowering string
+contains any undiscovered vertex. If so, the traversal walks that string,
+applying `Sl[i]` and `divcfac` at every step and saving each new vertex/vector.
+
+The first discovery selects the stored numerical vector; no explicit lowering
+schedule is retained. When a walk passes through an already discovered vertex,
+it continues with its current numerical vector rather than switching to the
+stored vector at that vertex. Columns within a weight are subsequently filled
+by dictionary iteration. Thus both path choice and column order depend on
+traversal/storage conventions rather than explicit string coordinates.
+
+Extending monochromatic strings resembles Demazure closure, but this adaptive
+queue is not a prescribed sequence of Demazure subsets. Replace that scheduling
+policy while retaining the existing vertex operators and numerical route as a
+comparison baseline during development.
+
+## Demazure enumeration
+
+Fix the written reduced expression ``w_0=s_{i_1}\cdots s_{i_L}``, where L is the
+number of positive roots. Use this convention throughout enumeration, coordinate
+extraction, and numerical evaluation; operator products act rightmost first.
+
+For a subset X of the normal highest-weight crystal, define the set closure
+from §13.2, equation (13.4):
+
+```math
+\mathfrak D_i(X)
+ =\{\widetilde f_i^a b : b\in X,\ a\ge0\}\setminus\{0\}.
+```
+
+Starting with ``X_0=\{u_\lambda\}``, compute
+
+```math
+X_k=\mathfrak D_{i_{L-k+1}}(X_{k-1}),\qquad k=1,\ldots,L.
+```
+
+These are the Demazure subsets for the successive suffixes of the written
+reduced word. Theorem 13.5 guarantees that the final set is the whole crystal,
+that the subset for a Weyl element is independent of its reduced expression,
+and that each intermediate subset intersects any color string in nothing,
+its highest vertex alone, or the entire string.
+
+Implement each stage by extending color strings from the previous stage and
+merging vertices by tensor-word equality. Include the previous set (exponent
+zero); processing only the vertices newly added at the preceding stage is not
+sufficient. Keep numerical vectors out of enumeration. Never mutate a word
+already published as a dictionary or set key. Initially use straightforward
+closure and deduplication; use the string-intersection property to avoid
+redundant walks only after validating that optimization.
+
+Demazure closure enumerates vertices but does not select a unique path to each
+vertex. Do not use first discovery to assign the final schedule. Extract the
+string coordinates below after enumeration. This is the set operator of §13.2,
+not the signed linear crystal Demazure operator of §13.3; the latter is not
+needed for vertex enumeration.
 
 ## Reduced words and string patterns
 
@@ -57,19 +120,31 @@ Suggested implementation:
    fixed smallest-node choice among length-increasing simple reflections.
    Check that its inversion count/length equals the number of positive roots
    and that the resulting element maps every positive root to a negative root.
-   Persist the chosen word as part of the basis convention.
-2. Consume the vertices reached by the existing traversal and the reversible
-   vertex operators from part 1. Require inverse-edge and color-string checks
-   before extracting coordinates; no stored graph is required.
+   Specify whether reflections are multiplied on the left or right, and return
+   the word in the written-product convention above. Persist the chosen word
+   as part of the basis convention.
+2. Enumerate vertices through the Demazure stages above using the reversible
+   vertex operators from part 1. Compare the resulting vertex set with the
+   existing traversal during development. Require inverse-edge and color-string
+   checks before extracting coordinates; no stored graph is required.
 3. Compute the above string tuple for each vertex. Verify termination at the
    unique highest vertex, reconstruction, and uniqueness of tuples.
 4. Group vertices by weight, retain the established weight order where valid,
    and sort by lexicographic string tuple within each weight. Dictionary
    iteration and graph-discovery order must not select basis columns.
-5. Store exponents in a concrete integer matrix or compressed nonzero runs.
+5. Evaluate numerical vectors from the extracted schedules in the predetermined
+   weight/column slots, subject to the numerical gates below. Enumeration paths
+   must not determine numerical vectors.
+6. Store exponents in a concrete integer matrix or compressed nonzero runs.
    Do not expand long powers into repeated operator indices. Once enumeration
    is complete, string extraction and independent vector evaluation can be
    parallelized with predetermined output slots.
+
+Use existing structures and small functions with concrete containers; no new
+whole-crystal wrapper or type hierarchy is needed. Document each new named
+function, including ordering and mutation semantics. Demazure stages depend on
+earlier stages; parallel work within a stage must use independent candidate
+buffers followed by a merge, rather than concurrent mutation of shared sets.
 
 Do not enumerate an arbitrary rectangular box of exponents and assume it is
 valid. Strings satisfy additional constraints. Initially derive them from the
@@ -106,7 +181,13 @@ do not hide rational or overflowing coefficients in the existing storage.
 
 Follow the implementation sequence above, starting with an A2 repeated-weight
 example. Check reduced-word length/action, string round trips and tuple
-uniqueness. Different discovery orders must produce identical ordered data.
+uniqueness. Use an existing relevant test file and small regression cases.
+Also check intermediate Demazure string intersections and final-set equality
+with the current traversal. For small examples, compare the sets from distinct
+reduced expressions of the same Weyl element. Coordinates and numerical bases
+may differ between words; only the Demazure sets must agree. Include a
+non-palindromic reduced word to expose accidental reversal of execution order.
+For a fixed word, different discovery orders must produce identical ordered data.
 Compare dimensions, exact ranks, generator relations, and metrics with current
 results before changing numerical construction; compare different bases through
 intertwining transformations. Hand the validated word, ordering, rescaling rules,
@@ -119,6 +200,8 @@ allocations/runtime against existing benchmarks where applicable. Apply the
 ## References
 
 Bump and Schilling, *Crystal Bases: Representations and Combinatorics* (2017),
-§11.1 (printed pp. 144 onward) and Corollary 13.8. See
+§11.1 (printed pp. 144 onward), §13.2 equation (13.4) and Theorem 13.5
+(printed p. 174), and Corollary 13.8 (printed p. 176). The supplied source is
+`/home/lurlurlur/Downloads/Daniel Bump, Anne Schilling - Crystal Bases_ Representations and Combinatorics-World Scientific (2017).pdf`. See
 [part 1's provenance](crystal_basis_irrep_plan.md#references-and-provenance)
 for the user-supplied PDF and original review details.

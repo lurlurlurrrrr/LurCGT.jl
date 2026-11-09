@@ -38,7 +38,7 @@ struct CGTSVD{S<:NonabelianSymm, U, D, L, NZ}
 end
 
 """
-    getNsave_CGTSVD(S, upsp, dnsp, leftlegs; save=true, verbose=0)
+    getNsave_CGTSVD(S, upsp, dnsp, leftlegs; save=true, verbose=VERBOSE[])
 
 Construct the CGT-side basis change associated with splitting a CGT into a
 left part and a right part.
@@ -85,7 +85,7 @@ getNsave_CGTSVD(::Type{S},
     dnsp::NTuple{D, NTuple{NZ, Int}},
     leftlegs;
     save=true,
-    verbose=0) where {S<:AbelianSymm, U, D, NZ} = nothing
+    verbose=VERBOSE[]) where {S<:AbelianSymm, U, D, NZ} = nothing
 
 # Validate and normalize the user-provided left-leg selection for `CGTSVD`.
 # The result is a sorted tuple of unique leg indices in the combined ordering
@@ -186,7 +186,7 @@ function get_split_sector_vectors(::Type{S},
     right_dn::NTuple{DR, NTuple{NZ, Int}},
     q::NTuple{NZ, Int},
     zeroq::NTuple{NZ, Int};
-    verbose=0) where {S<:NonabelianSymm, UL, DL, UR, DR, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, UL, DL, UR, DR, NZ}
 
     #println("get_split_sector_vectors for q = $q")
     #println(left_up)
@@ -244,7 +244,7 @@ function get_split_basis_matrix(::Type{S},
     upsp::NTuple{U, NTuple{NZ, Int}},
     dnsp::NTuple{D, NTuple{NZ, Int}},
     leftlegs::NTuple{L, Int};
-    verbose=0) where {S<:NonabelianSymm, U, D, NZ, L}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, U, D, NZ, L}
 
     @assert issorted(upsp)
     @assert issorted(dnsp)
@@ -285,11 +285,11 @@ function getNsave_CGTSVD(::Type{S},
     dnsp::NTuple{D, NTuple{NZ, Int}},
     leftlegs;
     save=true,
-    verbose=0) where {S<:NonabelianSymm, U, D, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, U, D, NZ}
 
     @assert issorted(upsp) && issorted(dnsp)
     upsp, dnsp, leftlegs = standardize_spaces_and_legs(S, upsp, dnsp, leftlegs, true)
-    getNsave_CGTSVD_stan(S, upsp, dnsp, leftlegs; save, verbose)
+    getNsave_CGTSVD_stan(S, upsp, dnsp, leftlegs; save, verbose=VERBOSE[])
 end
 
 function getNsave_CGTSVD_stan(::Type{S}, 
@@ -297,7 +297,7 @@ function getNsave_CGTSVD_stan(::Type{S},
     dnsp::NTuple{D, NTuple{NZ, Int}}, 
     leftlegs; 
     save, 
-    verbose) where {S<:NonabelianSymm, U, D, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, U, D, NZ}
 
     #println(S)
     #println(upsp)
@@ -310,7 +310,7 @@ function getNsave_CGTSVD_stan(::Type{S},
     leftlegs_ = normalize_cgtsvd_leftlegs(leftlegs, U + D)
     loaded = load_CGTSVD_sqlite(S, upsp, dnsp, leftlegs_)
     if !isnothing(loaded) return loaded end
-    return computeNsave_CGTSVD_stan(S, upsp, dnsp, leftlegs_; save, verbose)
+    return computeNsave_CGTSVD_stan(S, upsp, dnsp, leftlegs_; save, verbose=VERBOSE[])
 end
 
 function computeNsave_CGTSVD_stan(::Type{S},
@@ -318,7 +318,7 @@ function computeNsave_CGTSVD_stan(::Type{S},
     dnsp::NTuple{D, NTuple{NZ, Int}},
     leftlegs_;
     save,
-    verbose) where {S<:NonabelianSymm, U, D, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, U, D, NZ}
 
     svd_arr, bond_sps = get_split_basis_matrix(S, upsp, dnsp, leftlegs_; verbose)
     final_perm = get_cgtsvd_final_perm(S, upsp, dnsp, leftlegs_)

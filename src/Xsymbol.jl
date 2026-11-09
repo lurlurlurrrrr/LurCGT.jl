@@ -254,7 +254,7 @@ function getNsave_Xsymbol(::Type{S},
     dn2sp::NTuple{D2, NTuple{NZ, Int}},
     ctlegs1::NTuple{M, Int},
     ctlegs2::NTuple{M, Int};
-    verbose=0,
+    verbose=VERBOSE[],
     use1j=true,
     save=true) where {S<:NonabelianSymm, U1, D1, U2, D2, NZ, M}
 
@@ -299,7 +299,7 @@ end
 # Get X-symbol from given space configuration
 # TODO: Consider two 1j-symbols are contracted
 """
-    getNsave_Xsymbol_zeroadded(::Type{S}, up1sp, dn1sp, up2sp, dn2sp, ctlegs1, ctlegs2; verbose, use1j, save)
+    getNsave_Xsymbol_zeroadded(::Type{S}, up1sp, dn1sp, up2sp, dn2sp, ctlegs1, ctlegs2; verbose=VERBOSE[], use1j, save)
 
 Load or compute an X-symbol after space/leg standardization.
 
@@ -314,7 +314,7 @@ function getNsave_Xsymbol_zeroadded(::Type{S},
     dn2sp::NTuple{D2, NTuple{NZ, Int}},
     ctlegs1::NTuple{M, Int},
     ctlegs2::NTuple{M, Int};
-    verbose,
+    verbose=VERBOSE[],
     use1j,
     save) where {S<:NonabelianSymm, U1, D1, U2, D2, NZ, M}
 
@@ -327,7 +327,7 @@ function getNsave_Xsymbol_zeroadded(::Type{S},
 end
 
 """
-    computeNsave_Xsymbol_zeroadded(::Type{S}, up1sp, dn1sp, up2sp, dn2sp, ctlegs1, ctlegs2; verbose, use1j, save)
+    computeNsave_Xsymbol_zeroadded(::Type{S}, up1sp, dn1sp, up2sp, dn2sp, ctlegs1, ctlegs2; verbose=VERBOSE[], use1j, save)
 
 Compute the X-symbol recoupling tensor for two standardized CGTs.
 
@@ -344,7 +344,7 @@ function computeNsave_Xsymbol_zeroadded(::Type{S},
     dn2sp::NTuple{D2, NTuple{NZ, Int}},
     ctlegs1::NTuple{M, Int},
     ctlegs2::NTuple{M, Int};
-    verbose,
+    verbose=VERBOSE[],
     use1j,
     save) where {S<:NonabelianSymm, U1, D1, U2, D2, NZ, M}
 
@@ -629,7 +629,7 @@ end
 
 # TODO: Step2 & 3 can run in parallel, make code easier to parallelize
 """
-    do_step2_forall(s1up, s1dn, CGT1_oms, CGT2_oms; verbose=0)
+    do_step2_forall(s1up, s1dn, CGT1_oms, CGT2_oms; verbose=VERBOSE[])
 
 Run X-symbol step 2 for every pair of input OM basis states.
 
@@ -642,7 +642,7 @@ function do_step2_forall(s1up::Dict_s1res{S, NIU, NOU, NZ},
     s1dn::Dict_s1res{S, NID, NOD, NZ},
     CGT1_oms::CGTom{S, NZ},
     CGT2_oms::CGTom{S, NZ}; 
-    verbose=0) where {S<:NonabelianSymm, NIU, NOU, NID, NOD, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NIU, NOU, NID, NOD, NZ}
 
     NKL = NIU + NID + NOU + NOD - 3 # New key length
     NDL = NKL + 1 # The dimension of resulting array
@@ -664,7 +664,7 @@ function do_step2_forall(s1up::Dict_s1res{S, NIU, NOU, NZ},
 end
 
 """
-    do_step3_forall!(Xsym_arr, step2_res, nr_input, nr_output, nz_in, nz_out, CGT3_oms; verbose=0)
+    do_step3_forall!(Xsym_arr, step2_res, nr_input, nr_output, nz_in, nz_out, CGT3_oms; verbose=VERBOSE[])
 
 Convert all step-2 exact results into the final X-symbol coefficient array.
 
@@ -679,7 +679,7 @@ function do_step3_forall!(Xsym_arr::Array{Float64, 3},
     nz_in::Int,
     nz_out::Int,
     CGT3_oms::CGTom{S, NZ}; 
-    verbose=0) where {S<:NonabelianSymm, NI, NO, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NI, NO, NZ}
 
     @assert size(Xsym_arr, 1) == size(step2_res, 1)
     @assert size(Xsym_arr, 2) == size(step2_res, 2)
@@ -717,7 +717,7 @@ function get_center_space(sps::NTuple{M, NTuple{NZ, Int}},
 end
 
 """
-    to_vector(s3_res::Step2_result, CGT_oms; verbose=0) -> Vector{Float64}
+    to_vector(s3_res::Step2_result, CGT_oms; verbose=VERBOSE[]) -> Vector{Float64}
 
 Flatten a canonical step-3 result into CGT OM-basis order.
 
@@ -728,7 +728,7 @@ according to `CGT_oms.outgoing_larger`.
 """
 function to_vector(s3_res::Step2_result{S, NI, NO, NZ},
     CGT_oms::CGTom{S, NZ};
-    verbose=0) where {S<:NonabelianSymm, NI, NO, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NI, NO, NZ}
 
     totalom = CGT_oms.totalOM
     vec = zeros(Float64, totalom)
@@ -907,7 +907,7 @@ check_irange(::Type{<:FourCG3s{S}}, i::Int) where {S<:NonabelianSymm} =
 get_dict_param(::Type{<:FourCG3s{S}}) where {S<:NonabelianSymm} = (4, 4)
 
 """
-    create_CG3cont(cont::FourCG3s, new_ins, new_outs, new_coeffs, new_coeff_nfac, sortcheck; verbose=0)
+    create_CG3cont(cont::FourCG3s, new_ins, new_outs, new_coeffs, new_coeff_nfac, sortcheck; verbose=VERBOSE[])
 
 Create a replacement `FourCG3s` container after a recoupling move.
 
@@ -921,7 +921,7 @@ create_CG3cont(cont::FourCG3s{S},
     new_coeffs::Dict{NTuple{4, NTuple{NZ, Int}}, Array{BigInt, 4}},
     new_coeff_nfac::Dict{NTuple{4, NTuple{NZ, Int}}, Rational{BigInt}},
     sortcheck::Bool;
-    verbose=0) where {S<:NonabelianSymm, NZ} =
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NZ} =
 
     FourCG3s{S, NZ}(new_ins, new_outs, new_coeffs, new_coeff_nfac)
 
@@ -954,7 +954,7 @@ function create_s2res(::Type{S},
 end
 
 """
-    create_CG3cont(cont::Step2_result, new_ins, new_outs, new_coeffs, new_coeff_nfac, sortcheck; verbose=0)
+    create_CG3cont(cont::Step2_result, new_ins, new_outs, new_coeffs, new_coeff_nfac, sortcheck; verbose=VERBOSE[])
 
 Create a replacement step-2 container after F/R recoupling.
 
@@ -968,7 +968,7 @@ function create_CG3cont(cont::Step2_result{S, NI, NO, NZ, M, D},
     new_coeffs::Dict{NTuple{M, NTuple{NZ, Int}}, Array{BigInt, D}},
     new_coeff_nfac::Dict{NTuple{M, NTuple{NZ, Int}}, Rational{BigInt}},
     sortcheck::Bool;
-    verbose=0) where {S<:NonabelianSymm, NI, NO, NZ, M, D}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NI, NO, NZ, M, D}
 
     @assert M==max(D-1,0)
     create_s2res(S, new_ins, new_outs, new_coeffs, new_coeff_nfac)
@@ -1007,7 +1007,7 @@ end
 # Index of CGT: [FTree_up.ins..., FTree_down.ins...]
 # FTree_up, FTree_down are CGT1up, CGT1down for CGT1, respectively
 """
-    contN2canonical(CGT1up, CGT1down, CGT2up, CGT2down, CGT1legs, CGT2legs; verbose=0)
+    contN2canonical(CGT1up, CGT1down, CGT2up, CGT2down, CGT1legs, CGT2legs; verbose=VERBOSE[])
 
 Contract two canonical CGT basis elements and return a canonical step-3 result.
 
@@ -1024,7 +1024,7 @@ function contN2canonical(
     CGT2down::FTree{S},
     CGT1legs::NTuple{M, Int},
     CGT2legs::NTuple{M, Int};
-    verbose=0) where {S<:NonabelianSymm, M}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, M}
 
     # The number of added zero spaces in input and output
     # This amount of zero spaces are eventually removed
@@ -1072,7 +1072,7 @@ end
 
 # Do the second step of the X-symbol calculation
 """
-    do_step2(s1up::Step1_result, s1dn::Step1_result; verbose=0)
+    do_step2(s1up::Step1_result, s1dn::Step1_result; verbose=VERBOSE[])
 
 Reduce paired step-1 upper/lower contraction states into a step-2 container.
 
@@ -1083,7 +1083,7 @@ normalization factors, and accumulated into a `Step2_result`.
 """
 function do_step2(s1up::Step1_result{S, NIU, NOU, NZ}, 
     s1dn::Step1_result{S, NID, NOD, NZ}; 
-    verbose=0) where {S<:NonabelianSymm, NIU, NOU, NID, NOD, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NIU, NOU, NID, NOD, NZ}
 
     @assert s1up.upper_contracted == s1dn.lower_contracted
     @assert s1up.lower_contracted == s1dn.upper_contracted
@@ -1232,7 +1232,7 @@ function getspaces(s1res::Step1_result{S, NI, NO, NZ},
 end
 
 """
-    compute_FourCG3s(::Type{S}, spaces, sz; verbose=0) -> (coeffs, nfacs)
+    compute_FourCG3s(::Type{S}, spaces, sz; verbose=VERBOSE[]) -> (coeffs, nfacs)
 
 Compute the exact four-CG3 reduction kernel used by X-symbol step 2.
 
@@ -1252,7 +1252,7 @@ so the integer arrays can remain relatively prime.
 function compute_FourCG3s(::Type{S},
     spaces::NTuple{8, NTuple{NZ, Int}},
     sz::NTuple{4, Int};
-    verbose=0) where {S<:NonabelianSymm, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NZ}
 
     res_dict = Dict{NTuple{NZ, Int}, Array{BigInt, 6}}()
     res_nfac = Dict{NTuple{NZ, Int}, Rational{BigInt}}()
@@ -1562,7 +1562,7 @@ end
 
 
 """
-    do_step1(FTree1, FTree2, ci1, ci2; verbose=0) -> (step1, nz_in, nz_out)
+    do_step1(FTree1, FTree2, ci1, ci2; verbose=VERBOSE[]) -> (step1, nz_in, nz_out)
 
 Perform the first X-symbol contraction step on two fusion trees.
 
@@ -1580,7 +1580,7 @@ function do_step1(FTree1::FTree{S, N1},
     FTree2::FTree{S, N2}, 
     ci1::NTuple{M, Int}, 
     ci2::NTuple{M, Int};
-    verbose=0) where {S<:NonabelianSymm, N1, N2, M}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, N1, N2, M}
 
     @assert M <= N1 && M <= N2
     # Count the number of added zero spaces in input and output
@@ -1625,13 +1625,15 @@ function do_step1(FTree1::FTree{S, N1},
 
     # Get a step1_result object by combining two FTree objects
     s1_result = combine_2FTrees(FTree1_perm, FTree2_perm, Val(max(M, 1)); verbose=verbose)
-    if verbose > 1 println("step1 result is ") end
-    if verbose > 1 println(s1_result) end
+    if verbose > 1
+        println("step1 result is ")
+        println(s1_result)
+    end
     return s1_result, nz_in, nz_out
 end
 
 """
-    combine_2FTrees(FTree1, FTree2, ::Val{M}; verbose=0) -> Step1_result
+    combine_2FTrees(FTree1, FTree2, ::Val{M}; verbose=VERBOSE[]) -> Step1_result
 
 Merge two prepared fusion trees along their first `M` contracted legs.
 
@@ -1648,7 +1650,7 @@ four-CG3 reduction stage.
 """
 function combine_2FTrees(FTree1::FTree{S, N1}, 
     FTree2::FTree{S, N2}, 
-    ::Val{M}; verbose=0) where {S<:NonabelianSymm, N1, N2, M}
+    ::Val{M}; verbose=VERBOSE[]) where {S<:NonabelianSymm, N1, N2, M}
     # Since dummy 0 is added, we can exclude the case N1 == M or N2 == M
     NZ = nzops(S)
     @assert N1 > M && N2 > M
@@ -1745,7 +1747,7 @@ function combine_2FTrees(FTree1::FTree{S, N1},
 end
 
 """
-    cont_coeffs_s1(::Type{S}, key1, ins1, coeff1, coeff2, ::Val{M}; verbose=0)
+    cont_coeffs_s1(::Type{S}, key1, ins1, coeff1, coeff2, ::Val{M}; verbose=VERBOSE[])
 
 Contract one pair of step-1 fusion-tree coefficient blocks.
 
@@ -1763,7 +1765,7 @@ function cont_coeffs_s1(
     ins1::Tuple{Vararg{NTuple{NZ, Int}}},
     coeff1::Array{BigInt, D1}, 
     coeff2::Array{BigInt, D2}, 
-    ::Val{M}; verbose=0) where {S<:NonabelianSymm, D1, D2, M, NZ}
+    ::Val{M}; verbose=VERBOSE[]) where {S<:NonabelianSymm, D1, D2, M, NZ}
 
     @assert D1 >= M && D2 >= M
     @assert D1 == length(ins1) - 1
@@ -1811,7 +1813,7 @@ shared, and normalization-factor axes.
 end
 
 """
-    do_step3(s2res, nr_input, nr_output, nz_in, nz_out; verbose=0)
+    do_step3(s2res, nr_input, nr_output, nz_in, nz_out; verbose=VERBOSE[])
 
 Canonicalize and clean up an X-symbol after step 2.
 
@@ -1830,10 +1832,12 @@ function do_step3(s2res::Step2_result{S, NI, NO},
     nr_output::Int,
     nz_in::Int,
     nz_out::Int;
-    verbose=0) where {S<:NonabelianSymm, NI, NO}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NI, NO}
     @assert NI >= 2 && NO >= 2
-    if verbose > 1 println("nr_input=$(nr_input), nr_output=$(nr_output)") end
-    if verbose > 1 println(s2res) end
+    if verbose > 1
+        println("nr_input=$(nr_input), nr_output=$(nr_output)")
+        println(s2res)
+    end
 
     # First, apply F-symbol in the backward direction to make canonical form
     # In the lower part of Step2_result structure
@@ -1866,7 +1870,7 @@ function do_step3(s2res::Step2_result{S, NI, NO},
 end
 
 """
-    sortio_step3(s2res; verbose=0) -> Step2_result
+    sortio_step3(s2res; verbose=VERBOSE[]) -> Step2_result
 
 Sort the visible input and output spaces of a step-3 X-symbol result.
 
@@ -1877,7 +1881,7 @@ into adjacent switches and applies the required R/F-symbol updates. `verbose`
 prints the before/after order and the chosen permutations.
 """
 function sortio_step3(s2res::Step2_result{S, NI, NO};
-    verbose=0) where {S<:NonabelianSymm, NI, NO}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NI, NO}
     @assert NI >= 1 && NO >= 1
     if verbose > 1 
         println("Sorting the input and output spaces") 
@@ -1902,7 +1906,7 @@ function sortio_step3(s2res::Step2_result{S, NI, NO};
 end
 
 """
-    Base.permute!(s2res::Step2_result, perm, is_input; verbose=0) -> Step2_result
+    Base.permute!(s2res::Step2_result, perm, is_input; verbose=VERBOSE[]) -> Step2_result
 
 Apply a visible-leg permutation to a step-2/step-3 X-symbol result.
 
@@ -1916,7 +1920,7 @@ as exact coefficient data; the returned object may be a newly constructed
 function Base.permute!(s2res::Step2_result{S, NI, NO}, 
     perm::NTuple{N, Int}, 
     is_input::Bool;
-    verbose=0) where {S<:NonabelianSymm, NI, NO, N}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NI, NO, N}
 
     @assert !issorted(perm)
     if is_input @assert length(perm) == NI 
@@ -1933,7 +1937,7 @@ function Base.permute!(s2res::Step2_result{S, NI, NO},
 end
 
 """
-    switch_adjacent!(s2res, i1, i2, is_input; verbose=0) -> Step2_result
+    switch_adjacent!(s2res, i1, i2, is_input; verbose=VERBOSE[]) -> Step2_result
 
 Switch adjacent visible input or output spaces inside a step-3 object.
 
@@ -1947,7 +1951,7 @@ function switch_adjacent!(s2res::Step2_result{S, NI, NO, NZ, KL},
     i1::Int, 
     i2::Int, 
     is_input::Bool; 
-    verbose=0) where {S<:NonabelianSymm, NI, NO, NZ, KL}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NI, NO, NZ, KL}
 
     @assert i2 == i1 + 1
     if is_input @assert i1 >= 1 && i2 <= NI end
@@ -2082,7 +2086,7 @@ NI+NO-3, NI+NO-2
 
 
 """
-    remove_zero_spaces(s2res, nz_in, nz_out; verbose=0) -> Step2_result
+    remove_zero_spaces(s2res, nz_in, nz_out; verbose=VERBOSE[]) -> Step2_result
 
 Remove dummy zero q-label spaces inserted during X-symbol step 1.
 
@@ -2097,11 +2101,13 @@ visible input and one visible output.
 function remove_zero_spaces(s2res::Step2_result{S, NI, NO, NZ}, 
     nz_in::Int, 
     nz_out::Int;
-    verbose=0) where {S<:NonabelianSymm, NI, NO, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NI, NO, NZ}
     @assert NI >= 2 && NO >= 2
-    if verbose > 1 println("Removing zero spaces: nz_in=$(nz_in), nz_out=$(nz_out)") end
-    if verbose > 1 println("Before removing zero spaces:") end
-    if verbose > 1 println(s2res) end
+    if verbose > 1
+        println("Removing zero spaces: nz_in=$(nz_in), nz_out=$(nz_out)")
+        println("Before removing zero spaces:")
+        println(s2res)
+    end
 
     zero_qlabel = Tuple(0 for _=1:NZ)
     # Find where are zero spaces in inpute and outputs
@@ -2155,18 +2161,24 @@ function remove_zero_spaces(s2res::Step2_result{S, NI, NO, NZ},
     center_intsp = NIn > 1 && NOn > 1 ? [NI-1] : Int[]
     remain_intsps = sort(vcat(survive_intsp_in, center_intsp, survive_intsp_out))
 
-    if verbose > 1 println("remaining cg3 indices: ", remain_cg3s) end
-    if verbose > 1 println("remaining intermediate space indices: ", remain_intsps) end
+    if verbose > 1
+        println("remaining cg3 indices: ", remain_cg3s)
+        println("remaining intermediate space indices: ", remain_intsps)
+    end
 
     new_coeffs = Dict{NTuple{NKL, NTuple{NZ, Int}}, Array{BigInt, ND}}()
     new_coeff_nfac = Dict{NTuple{NKL, NTuple{NZ, Int}}, Rational{BigInt}}()
-    if verbose > 1 println("Length of key: $NKL") end
-    if verbose > 1 println("Dimension of coeff arrays: $ND") end
+    if verbose > 1
+        println("Length of key: $NKL")
+        println("Dimension of coeff arrays: $ND")
+    end
 
     for k in keys(s2res.coeff)
         coeff, nfac = s2res.coeff[k], s2res.coeff_nfac[k]
-        if verbose > 1 println("Original key: ", k) end
-        if verbose > 1 println("Original coeff: ", coeff) end
+        if verbose > 1
+            println("Original key: ", k)
+            println("Original coeff: ", coeff)
+        end
         nk = length(remain_intsps)>0 ? k[remain_intsps] : ()
         coeffsz_new = size(coeff)[remain_cg3s]
         if length(remain_cg3s)==0 new_coeff = fill(BigInt(coeff[]))
@@ -2248,7 +2260,7 @@ function fsymio_in_step3(nr_input::Int,
 end
 
 """
-    add_singdim(FTree, front; verbose=0) -> FTree
+    add_singdim(FTree, front; verbose=VERBOSE[]) -> FTree
 
 Add a dummy zero-q-label input space to a fusion tree.
 
@@ -2261,7 +2273,7 @@ trivial CG3. `verbose` is forwarded to `create_FTree`.
 This helper handles edge cases in X-symbol contraction where one side would
 otherwise have no uncontracted input or output space.
 """
-function add_singdim(FTree::FTree{S, N, NZ}, front; verbose=0) where {S<:NonabelianSymm, N, NZ}
+function add_singdim(FTree::FTree{S, N, NZ}, front; verbose=VERBOSE[]) where {S<:NonabelianSymm, N, NZ}
     @assert N >= 1
     zero_qlabel = Tuple(0 for _=1:NZ)
     new_ins = front ? (zero_qlabel, FTree.ins...) : (FTree.ins..., zero_qlabel)
@@ -2382,7 +2394,7 @@ function getNsave_Xsymbol_1j(::Type{S},
     is1j_1::Bool,
     is1j_2::Bool,
     CGTom_res::CGTom{S, NZ};
-    verbose) where {S<:NonabelianSymm, NZ, U1, D1, U2, D2, M}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NZ, U1, D1, U2, D2, M}
 
     l1up, l1dn, l2up, l2dn = separate_legs(ctlegs1, ctlegs2, U1, D1, U2, D2)
     @assert length(l1up) == length(l2dn); 
@@ -2738,7 +2750,7 @@ function get_newio_X1j(::Type{S},
 end
 
 """
-    permute_io!(res_vec, incom_1j, is1j_1; verbose=0) -> nothing
+    permute_io!(res_vec, incom_1j, is1j_1; verbose=VERBOSE[]) -> nothing
 
 Canonicalize the visible input or output order of one-j branch results in place.
 
@@ -2752,7 +2764,7 @@ original first/second CGT in the X-symbol block. `verbose` is forwarded to
 function permute_io!(res_vec::Vector{Step2_result{S, NU, ND, NZ}},
     incom_1j::Bool,
     is1j_1::Bool;
-    verbose=0) where {S<:NonabelianSymm, NZ, NU, ND}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NZ, NU, ND}
 
     ex = res_vec[1]
     tosort = incom_1j ? collect(ex.ins) : collect(ex.outs)
@@ -2967,7 +2979,7 @@ function contract_arrs(arr1::AbstractArray,
 end
 
 """
-    get_canonical_basis(::Type{S}, insp, outsp, om; verbose=0)
+    get_canonical_basis(::Type{S}, insp, outsp, om; verbose=VERBOSE[])
         -> Vector{SparseArray{Float64}}
 
 Materialize the canonical CGT outer-multiplicity basis as sparse tensors.
@@ -2986,7 +2998,7 @@ function get_canonical_basis(::Type{S},
     insp::NTuple{NI, NTuple{NZ, Int}},
     outsp::NTuple{NO, NTuple{NZ, Int}},
     om::CGTom{S, NZ};
-    verbose=0) where {S<:NonabelianSymm, NI, NO, NZ}
+    verbose=VERBOSE[]) where {S<:NonabelianSymm, NI, NO, NZ}
 
     result = Vector{SparseArray{Float64, NI+NO}}()
     totalOM = om.totalOM
