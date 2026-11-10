@@ -5,9 +5,9 @@
 
 Return whether `SO{N}` is supported by this implementation.
 
-`N` is the defining dimension. The code supports `SO{N}` for `N >= 4`; both
-odd and even cases are handled, but several qlabel and tableau conventions
-depend on the parity of `N`.
+`N` is the vector dimension. Metadata accepts `N >= 2`; the minuscule
+backend supports even `N >= 4`, including Lie-algebra/Spin half-spin irreps.
+SO(2) is Abelian and does not use this fundamental construction.
 """
 isvalidsymm(::Type{SO{N}}) where N = 2 <= N
 
@@ -275,7 +275,7 @@ function determine_last(::Type{SO{N}}, z1::Int, z2::Int) where N
         a2 = z2 - z1; b = z1
         @assert a2 % 2 == 0; a = div(a2, 2)
     else
-        a2, b2 = z1 + z2, z2 - z1
+        a2, b2 = z2 - z1, z2 + z1
         @assert a2 % 2 == 0 && b2 % 2 == 0
         a = div(a2, 2); b = div(b2, 2)
     end
@@ -293,4 +293,70 @@ matching the package's tableau-shape convention.
 function less_weight(::Type{SO{N}}, w1::NTuple{NZ, Int}, w2::NTuple{NZ, Int}) where {N, NZ}
 	@assert NZ == div(N, 2)
 	return reverse(w1) < reverse(w2)
+end
+
+"""`fundamental_sequence(SO{N})` orders the even-orthogonal seeds before products."""
+function fundamental_sequence(::Type{SO{N}}) where N
+    iseven(N) && N >= 4 || throw(ArgumentError("Minuscule recipes require even SO(N), N ≥ 4"))
+    r = div(N, 2)
+    return unique(vcat([1, r-1, r], collect(2:r-2)))
+end
+
+"""`minuscule_nodes(SO{N})` returns the vector and half-spin nodes for even N."""
+function minuscule_nodes(::Type{SO{N}}) where N
+    iseven(N) && N >= 4 || throw(ArgumentError("Minuscule SO recipes require even N ≥ 4"))
+    return N == 4 ? [1,2] : [1,div(N,2)-1,div(N,2)]
+end
+
+"""`fundamental_sources(SO{N}, k)` selects the next vector-product component."""
+fundamental_sources(::Type{SO{N}}, k::Int) where N = (k-1, 1)
+
+"""`get_dualq(SO{N}, q)` exchanges half-spin nodes when the even-orthogonal rank is odd."""
+get_dualq(::Type{SO{N}}, q::NTuple{R,Int}) where {N,R} = iseven(N) && isodd(R) ? ntuple(i -> i == R-1 ? q[R] : i == R ? q[R-1] : q[i],R) : q
+
+"""`fundamental_qlabels(SO)` returns unit labels in fixed construction order."""
+fundamental_qlabels(::Type{S}) where {S<:SO} = [_unit_label(S,k) for k in fundamental_sequence(S)]
+
+"""`_has_minuscule_recipes(SO)` reports whether Part 3a recipes are available."""
+_has_minuscule_recipes(::Type{SO{N}}) where N = iseven(N) && N >= 4
+
+"""`_minuscule_symbol_start(SO)` reserves the existing vector alphabet."""
+_minuscule_symbol_start(::Type{SO{N}}) where N = nzops(SO{N})+1
+
+"""`_preserve_vector_symbols(SO, k)` keeps vector-seed symbol assignments compatible."""
+_preserve_vector_symbols(::Type{SO{N}}, k::Int) where N = k == 1 && N != 4
+
+"""
+    _encode_minuscule_symbol(SO{N}, w, next) -> (symbol, next)
+
+Encode half-spin signs beyond the vector alphabet without changing the sequential
+counter. The two chiralities have disjoint sign patterns. Reject Int overflow.
+"""
+function _encode_minuscule_symbol(::Type{SO{N}}, w::Tuple, next::Int) where N
+    r = div(N,2)
+    r < 8sizeof(Int)-1 || throw(OverflowError("Spin alphabet exceeds Int capacity"))
+    mask = sum(w[j] < 0 ? (1 << (j-1)) : 0 for j in 1:r)
+    return Base.Checked.checked_add(r+1,mask), next
+end
+
+"""`fundamental_validation_rules(SO)` returns fixed ordered target/source checks, including family-specific cases."""
+function fundamental_validation_rules(::Type{S}) where {S<:SO}
+    r = nzops(S)
+    if S == SO{4}
+        rules = Tuple{NTuple{r,Int},NTuple{r,Int},NTuple{r,Int}}[]
+        for k in 1:2
+            q = _unit_label(S,k); a = 2 .* q
+            push!(rules,(a,q,q),(a,a,a))
+        end
+        return rules
+    end
+    adjoint = _unit_label(S,2)
+    rules = _fundamental_validation_rules(S,adjoint)
+    if S == SO{8}
+        for k in (3,4)
+            q = _unit_label(S,k); target = 2 .* q
+            push!(rules,(target,q,q),(target,adjoint,adjoint))
+        end
+    end
+    return rules
 end

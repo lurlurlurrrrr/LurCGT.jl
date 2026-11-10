@@ -19,7 +19,7 @@ using FileWatching: mkpidlock
 
 # Word order can change representation bases and every dependent CG/recoupling
 # object. Version the entire SQLite file and memory namespace together.
-const CRYSTAL_BASIS_VERSION = "demazure-v1"
+const CRYSTAL_BASIS_VERSION = "minuscule-v2"
 
 const SQLITE_DBS = Dict{String, SQLite.DB}()
 const SQLITE_DB_LOCK = ReentrantLock()

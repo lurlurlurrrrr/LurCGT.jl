@@ -1,50 +1,45 @@
 # Part 3a: Minuscule irreps and fundamental construction recipes
 
-Status: design proposal. See the [part 3 overview](crystal_basis_integration_plan.md)
+Status: implementation and validation specification. See the [part 3 overview](crystal_basis_integration_plan.md)
 for dependencies and shared requirements.
 
-## Goal and implementation order
+Part 3a remains incomplete pending the
+[recipe-struct cleanup](crystal_basis_recipe_structs_plan.md). That plan
+supersedes the function-only recipe representation below with concrete
+per-symmetry construction and validation catalogues.
 
-Hard-code how every fundamental irrep is obtained, following the construction
-catalogue in Bump and Schilling, Tables 5.2–5.6 and the classical constructions
-of §5.4. Each entry selects an existing seed, a minuscule seed, or a specified
-component of an ordered tensor product. Do not infer fundamentals by assuming
-they are the largest component of exterior or tensor powers.
+## Scope
 
-Implement two building blocks:
+Replace the alternating-product irrep backend with direct minuscule seeds and
+selected tensor-product components for SU(N), Sp(2N), SO(2N), E6, and E7.
+Virtual crystals and adjoint seed backends belong to later parts; SO(2N+1),
+F4, G2, and E8 are outside this implementation scope.
 
-1. Construct a minuscule `Irep` directly from its Weyl orbit, crystal edges,
-   numerical generators, and metric.
-2. Generalize `get_irep_frommw` to construct a requested irrep from two known
-   input irreps, even when the requested highest weight is not maximal in their
-   tensor product. Follow the highest-weight selection and multiplet workflow
-   used for three-leg Clebsch–Gordan coefficients, without requiring an existing
-   output irrep.
+Retain `Irep`, `CrystalVertex`, exact arithmetic, and part 2's Demazure
+traversal. Implement seed construction and generalize `get_irep_frommw` to
+select a requested component of two known irreps, then dispatch fundamental
+construction through fixed recipes. A fundamental need not be the maximal
+component of its source product.
 
-Then wire the hard-coded fundamental recipes into `get_fundamental_ireps` and
-`getNsave_irep`. Retain `Irep`, `CrystalVertex`, exact arithmetic, and part 2's
-Demazure traversal with frozen source counts and stopping at known vertices.
-E6/E7 minuscule seeds belong here; F4's seed comes from part 3b and E8's seed
-from part 3c. Register their recipes now and enable them as the seeds become ready.
-
-## First example: SO(7)
+## First example: SO(8)
 
 | Target q-label | Dimension | Hard-coded construction |
 | --- | ---: | --- |
-| `(1, 0, 0)` | 7 | Existing defining representation |
-| `(0, 1, 0)` | 21 | Select this component of `(1, 0, 0)` tensor `(1, 0, 0)` |
-| `(0, 0, 1)` | 8 | Minuscule spin construction |
+| `(1, 0, 0, 0)` | 8 | Minuscule vector seed |
+| `(0, 1, 0, 0)` | 28 | Select this component of `(1, 0, 0, 0)` tensor `(1, 0, 0, 0)` |
+| `(0, 0, 1, 0)` | 8 | Minuscule half-spin seed |
+| `(0, 0, 0, 1)` | 8 | Minuscule half-spin seed of the other chirality |
 
-The largest component of the vector square has label `(2, 0, 0)` and dimension
-27. The target 21-dimensional component therefore needs its own highest-weight
+The largest component of the vector square has label `(2, 0, 0, 0)` and dimension
+35. The target 28-dimensional component therefore needs its own highest-weight
 vector inside the ambient product weight space. Passing a different `mw` while
 keeping the scalar initial state `RT[1]` does not perform that selection.
+The vector square decomposes as 35 + 28 + 1.
 
 ## Conventions and label adapters
 
-Use the book's node numbering for the catalogue below. For E6, E7, E8 the chain
-is `1–3–4–5–6[–7[–8]]`, with node 2 attached to 4. For D, the fork has terminal
-nodes `r-1,r`. For F4, nodes 1,2 are long and 3,4 short; for G2, node 1 is short.
+Use the book's node numbering: the E6/E7 chain is `1–3–4–5–6[–7]`,
+with node 2 attached to 4; the D fork has terminal nodes `r-1,r`.
 
 Record the Cartan matrix with the explicit convention
 ``A_{ij}=\langle\alpha_i^\vee,\alpha_j\rangle``. In fundamental-weight
@@ -58,8 +53,7 @@ q-label meaning and establish the node permutation by checking each `getdz`.
 Spin modules represent ``\mathfrak{so}(N)`` and ``\mathrm{Spin}(N)``;
 they do not generally descend to ``\mathrm{SO}(N)``. For this extension, `SO{N}` must support the requested
 Lie-algebra/Spin representations, including the spin labels in the example.
-Document that meaning and update existing parity restrictions consistently. Treat B1=A1, C1=A1, D3=A3, D2=A1⊕A1
-separately; SO(2) is Abelian rather than a member of the simple B/D catalogue.
+Document that meaning and update existing parity restrictions consistently. Handle C1=A1, D3=A3, and D2=A1⊕A1 separately; SO(2) is Abelian.
 
 ## Minuscule seeds
 
@@ -73,86 +67,98 @@ normalization explicitly. This special numerical shortcut does not extend to
 arbitrary crystals. See the [Sage minuscule representation construction](https://doc.sagemath.org/html/en/reference/algebras/sage/algebras/quantum_groups/representations.html)
 and [Geck's minuscule construction](https://arxiv.org/abs/1603.07179).
 
-For B_r spin, the weights are all ``\frac12(\pm e_1\pm\cdots\pm e_r)``,
-giving dimension ``2^r``. For D_r, the two sign-parity classes give the two
-half-spin modules of dimension ``2^{r-1}``. In the existing doubled SO storage,
-these coordinates are integers ±1. Use the weight/node adapter to associate
-parity with the correct terminal q-label.
+### Integer symbols and vertex storage
 
-## Spin vertices and highest words
+Keep `CrystalVertex{S}.word::Vector{Int}` for every family. Assign each vertex
+of a minuscule seed one integer symbol `a`; its crystal vertex is
+`CrystalVertex{S}([a])`. Weights, sign tuples, and orbit coordinates are metadata
+associated with that symbol, not elements of the stored word. Do not introduce
+a new vertex type or a vector of structured symbols.
 
-Extend the existing word-only vertex representation with these symbols in this
-part. Keep the current vector alphabet and its integer encoding compatible.
+Use deterministic, disjoint symbol ranges for distinct minuscule seeds of the
+same symmetry, preserving the existing vector alphabet. A symbol must identify
+both its seed and its orbit vertex without extra per-word metadata, even when
+different seeds contain the same weight. Assign ranges independently of request
+order; check integer overflow. Within each seed use a fixed orbit traversal
+(highest weight first, lowering colors in ascending order, first discovery),
+or the explicit compatible encoding specified below.
 
-| Family | Fundamental node | Highest word |
-| --- | --- | --- |
-| B_r | r | `[s(+,...,+)]` |
-| D_r | r−1 | `[s(+,...,+,-)]` |
-| D_r | r | `[s(+,...,+)]` |
+Provide symbol-to-weight and single-symbol raising/lowering access through the
+existing crystal interface, using concrete integer tables or family-specific
+integer decoding. Local epsilon and phi are 0 or 1 for minuscule symbols.
+Missing edges follow the existing interface's no-action convention.
 
-Each `s(...)` is one atomic symbol, encoded by one integer. These are true spin
-fundamentals, distinct from the existing vector-derived doubled-spin labels.
+Tensor products concatenate these integer words in the prescribed factor
+order: `[a]` tensor `[b]` gives `[a, b]`. Selected components retain their
+words in the original minuscule alphabet; do not replace a nonminuscule
+component vertex with a new atomic symbol. This keeps the existing word
+signature rule applicable to staged fundamental constructions.
 
-For spin symbols ``s(\sigma_1,\ldots,\sigma_r)``, with each sign ±1, the
-orthogonal-coordinate weight is ``\frac12\sum_j\sigma_j e_j``. Encode them
-in a disjoint range beyond the existing vector alphabet, using a deterministic
-sign-bit encoding with explicit integer-overflow checks. Symbols in both D
-chiralities have distinct sign patterns, so no chirality identifier is needed.
+### D-family spin words
 
-- In B and D, for i<r, ``f_i`` changes adjacent signs `(+,-)` at positions
-  i,i+1 into `(-,+)` and is undefined otherwise.
-- In B, ``f_r`` changes the final `+` to `-`. All ``2^r`` sign patterns occur.
-- In D, ``f_r`` changes the final pair `(+,+)` to `(-,-)`. Even and odd numbers
-  of minus signs give the two separate components of size ``2^{r-1}``.
-- Raising reverses these changes. Local spin epsilon/phi are 0 or 1. Convert
-  weights to the existing doubled, reversed SO z-coordinates: the stored
-  tuple is ``(\sigma_r,\ldots,\sigma_1)``. Validate transitions against `getdz`.
+The notation `s(...)` below denotes an encoded integer, not a stored object.
+Keep the existing vector alphabet compatible. Encode each spin symbol
+``s(\sigma_1,\ldots,\sigma_r)`` as one integer in a disjoint range, using
+sign bits with overflow checks. Its weight is
+``\frac12\sum_j\sigma_j e_j``. The two sign-parity classes give the two
+half-spin modules, each of dimension ``2^{r-1}``:
 
-## Complete fundamental construction catalogue
+| Fundamental node | Highest word |
+| --- | --- |
+| r−1 | `[s(+,...,+,-)]` |
+| r | `[s(+,...,+)]` |
+
+For i<r, lowering changes signs `(+,-)` at positions i,i+1 to `(-,+)`.
+At node r it changes the final pair `(+,+)` to `(-,-)`. Otherwise lowering
+is undefined; raising reverses these changes. Local epsilon/phi are 0 or 1.
+The stored SO z-label is ``(\sigma_r,\ldots,\sigma_1)``; validate transitions
+against `getdz` and use the node adapter to identify the terminal q-labels.
+No separate chirality identifier is needed.
+
+## Fundamental recipes
 
 Write ``C_\lambda(X)`` for one connected component of crystal X whose highest
 vertex has weight λ. It never means that all of X is irreducible. Specify tensor
 factor order and the signature convention; the book and other software may use
 opposite conventions. Check a small tensor example before copying highest tuples.
 
-### Classical families
+### Construction order
 
-| Type | Every fundamental crystal | Numerical realization |
+Write `F_k` for the fundamental irrep with unit Dynkin label at node k.
+`select(F_k; X, Y)` means construct that target component of the ordered product
+`X tensor Y`, using the preceding-multiplet algorithm below. All table entries
+use deterministic copy 1; determine the highest crystal vertex in the fixed
+local tensor convention. This selection must not require a preexisting target.
+
+| Family | Direct minuscule seeds | Binary construction of remaining fundamentals |
 | --- | --- | --- |
-| A_r (`SU{r+1}`) | ``B(\omega_k)``, 1≤k≤r, are all minuscule; equivalently ``C_{\omega_k}(V^{\otimes k})`` | ``\bigwedge^k V``, dimension ``\binom{r+1}{k}`` |
-| B_r (`SO{2r+1}` at Lie-algebra level) | Vector tensor components for 1≤k<r; minuscule spin for k=r | ``\bigwedge^k V`` for k<r, dimension ``\binom{2r+1}{k}``; spin dimension ``2^r`` |
-| C_r (`Sp{2r}`) | Minuscule vector seed; ``C_{\omega_k}(V^{\otimes k})`` for all 1≤k≤r | Primitive part of ``\bigwedge^k V`` (kernel of symplectic contraction), dimension ``\binom{2r}{k}-\binom{2r}{k-2}`` |
-| D_r (`SO{2r}` at Lie-algebra level) | Minuscule vector and two half-spin seeds; vector tensor components for 1≤k≤r−2 | ``\bigwedge^k V`` for k≤r−2, dimension ``\binom{2r}{k}``; both spin dimensions ``2^{r-1}`` |
+| A_r, `SU{r+1}` | Every `F_k`, 1≤k≤r | None: construct each requested fundamental directly from its Weyl orbit |
+| C_r, `Sp{2r}` | `F_1` | For k=2,…,r: `select(F_k; F_{k-1}, F_1)` |
+| D_r, `SO{2r}`, r≥4 | `F_1`, `F_{r-1}`, `F_r` | For k=2,…,r−2: `select(F_k; F_{k-1}, F_1)` |
+| E6 | `F_1` (27), `F_6` (27) | `F_2 ← F_1 tensor F_6`; `F_3 ← F_1 tensor F_1`; `F_5 ← F_6 tensor F_6`; `F_4 ← F_3 tensor F_1` |
+| E7 | `F_7` (56) | `F_1 ← F_7 tensor F_7`; `F_6 ← F_7 tensor F_7`; `F_2 ← F_1 tensor F_7`; `F_5 ← F_6 tensor F_7`; `F_3 ← F_1 tensor F_1`; `F_4 ← F_5 tensor F_7` |
 
-A binomial coefficient with negative lower index is zero. The B top exterior
-power has highest weight ``2\omega_r``; the D top exterior power splits into
-``2\omega_{r-1}`` and ``2\omega_r``. These are useful existing seeds, but not
-the spin fundamental modules. Section 5.4, Proposition 5.11 explains this gap.
+Each arrow selects only the named target, not the entire product. In particular,
+the E7 recipe for `F_3` uses the adjoint square instead of constructing a full
+fourfold minuscule product. Validate the occurrence of every target and the
+node-label adapters before enabling these recipes.
 
-### Exceptional families
+Independent dimension targets:
 
-The following is a dependency catalogue derived from §5.6, Tables 5.2–5.6.
-Each tensor entry means the selected component, not the full tensor space.
-Dimensions are included as independent implementation acceptance targets.
+- A_r: ``dim F_k=\binom{r+1}{k}``.
+- C_r: ``dim F_k=\binom{2r}{k}-\binom{2r}{k-2}``.
+- D_r: ``dim F_k=\binom{2r}{k}`` for k≤r−2; both half-spin dimensions are
+  ``2^{r-1}``.
+- E6, nodes 1,…,6: 27, 78, 351, 2,925, 351, 27.
+- E7, nodes 1,…,7: 133, 912, 8,645, 365,750, 27,664, 1,539, 56.
 
-| Type | Node → dimension | Construction |
-| --- | --- | --- |
-| E6 | 1→27; 6→27 | Two minuscule seeds M=``B(\omega_1)``, M*=``B(\omega_6)`` |
-| E6 | 2→78 | ``C_{\omega_2}(M\otimes M^*)`` |
-| E6 | 3→351; 5→351 | ``C_{\omega_3}(M^{\otimes2})``; ``C_{\omega_5}((M^*)^{\otimes2})`` |
-| E6 | 4→2,925 | ``C_{\omega_4}(M^{\otimes3})`` |
-| E7 | 7→56 | Minuscule seed M=``B(\omega_7)`` |
-| E7 | 1→133; 6→1,539 | Respective components of ``M^{\otimes2}`` |
-| E7 | 2→912; 5→27,664 | Respective components of ``M^{\otimes3}`` |
-| E7 | 3→8,645; 4→365,750 | Respective components of ``M^{\otimes4}`` |
-| F4 | 4→26 | Virtual E6 seed V from part 3b |
-| F4 | 1→52; 3→273 | Respective components of ``V^{\otimes2}`` |
-| F4 | 2→1,274 | ``C_{\omega_2}(V^{\otimes3})`` |
-| G2 | 1→7 | Existing numerical seed; virtual D4 crystal as a uniform construction/check |
-| G2 | 2→14 | ``C_{\omega_2}(B(\omega_1)^{\otimes2})``; use the existing alternating-square realization as a comparison |
+A binomial coefficient with negative lower index is zero. These dimension
+formulas do not prescribe an exterior-product implementation.
 
-For E8, register the incremental dependencies documented in
-[part 3c](crystal_basis_adjoint_plan.md); their seed is unavailable until that part.
+For C1 use the A1 minuscule construction. For D3 use the A3 adapter and its
+three minuscule fundamentals; for D2 use the two A1 factors. Record the explicit
+node permutation in each adapter and verify it against `getdz`. SO(2) remains
+on its Abelian path.
 
 ### Hard-coded recipes and dependency order
 
@@ -164,12 +170,18 @@ labels/tuples. Each recipe specifies:
 - selected component/copy and its highest crystal vertex or a fixed rule to
   obtain it in the library's tensor convention.
 
-Convert the table's tensor powers into explicit staged binary constructions.
-Record intermediate labels and copy choices rather than searching tensor powers
-for a construction at runtime. Where the book gives a highest tuple, translate
+Use the binary dependencies above directly; do not search tensor powers for
+a construction at runtime. Where the book gives a highest tuple, translate
 it to the local factor order and verify its weight and vanishing raising actions.
-A recipe requiring a later seed stays explicitly unavailable until that seed
-backend is implemented.
+
+Start work on a new symmetry with `initialize_symmetry(S, RT; verbose)`: call
+`isvalidsymm`, reject invalid symmetries before storage access, and save only
+the trivial irrep. This initializer does not enumerate fundamentals.
+
+Remove `get_fundamental_ireps` when recipe dispatch is integrated. On a
+`getNsave_irep` cache miss, execute only the requested fundamental's hard-coded
+recipe and its dependencies. Keep trivial initialization separate from this
+per-target construction; do not trigger bulk generation on a cache miss.
 
 Resolve dependencies recursively and cache each completed irrep. Distinguish
 actual unit-label fundamentals from convenient doubled-spin bootstrap modules.
@@ -180,11 +192,13 @@ to allocate every fundamental eagerly.
 
 ## Generalized tensor-component construction
 
-The intended boundary is a function accepting two known `Irep`s, a target
-q-label, and a deterministic copy-selection convention, returning a new `Irep`.
-Its final name can be chosen during implementation. Generalize the numerical
-core of `get_irep_frommw`; retain its current call sites as the maximal-component
-special case so existing exterior-product and recursive constructions still work.
+Modify `get_irep_frommw` to accept a product representation and the maximal
+weight of the target irrep, returning the selected `Irep`. With alternating
+products removed, both `inner_prod1` and `inner_prod2` are concretely typed
+`Dict{NTuple{NZ, Int}, Matrix{RT}}`; product `weight_info` is likewise a
+`Dict{NTuple{NZ, Int}, WeightInfo{NZ}}`, with no `nothing` branch.
+The maximal Cartan component remains the special case used by dominant-weight
+recursion.
 
 ### 1. Build the ambient product
 
@@ -192,27 +206,25 @@ Reuse `tensor_prod_reps` and its sparse lowering blocks, weight ranges, and
 `WeightInfo`. Preserve ordered input factors. Compute the target weight using
 `qlab2mwz`; do not choose it from the largest ambient weight.
 
-### 2. Select a numerical highest-weight vector
+### 2. Select the maximal-weight state through preceding multiplets
 
-At the target weight, find a nonzero vector annihilated by all ambient raising
-operators. Obtain raising maps from the known factor representations and their
-exact metrics/normalization. The common kernel isolates highest vectors without
-requiring numerical representations of the larger product components.
+Follow the three-leg CG construction: process product highest weights in
+descending order, construct all larger irreps and their copies, and retain
+their embedded multiplets and exact metric data. At the target weight, project
+candidate product-basis vectors orthogonally to those already-found states,
+as in `get_mwstate`. This yields the target maximal-weight state without a
+direct raising-kernel solve.
 
-Reuse the CG3 construction's exact metric operations, deterministic candidate
-ordering, and normalization where applicable. Its `get_mwstate` currently
-projects away previously constructed multiplets; it cannot be called unchanged
-without those subspaces. Either adapt that machinery to the target raising
-kernel, or provide the required preceding subspaces without assuming the unknown
-output irrep. Prefer direct target-kernel extraction to unnecessary construction
-of unrelated components.
+Use deterministic candidate ordering, exact projection, and sign conventions.
+For repeated targets, project out preceding copies as well and select the
+requested copy deterministically. Reject an absent target or an out-of-range
+copy. A crystal highest tuple selects a combinatorial component for traversal;
+it is not generally the numerical highest-weight pure tensor, nor does it
+provide a canonical matching to numerical copies.
 
-If the target occurs more than once, select a copy by a fixed exact kernel-basis
-ordering and normalization (including sign). Reject an absent target or an
-out-of-range copy. A crystal highest tuple identifies a combinatorial component;
-it is not generally the numerical highest-weight pure tensor. Use its crystal
-component to schedule lowering and a selected numerical highest vector to embed
-an isomorphic copy; do not claim a canonical crystal-to-kernel copy matching.
+Construct the preceding irreps from the same ambient product using the basis
+builder below. Do not load an unknown output irrep to generate its multiplet:
+that would make fundamental bootstrap circular.
 
 ### 3. Generate the selected component without an output irrep
 
@@ -235,42 +247,185 @@ independent lower-level operations and the generalized Demazure basis builder.
 ### 4. Assemble the new irrep
 
 Reuse `get_irep_frommw`'s Gram-matrix construction and exact coefficient solves
-to express ambient lowering in the generated basis. Construct inverse metrics
-and return `Irep`. Preserve primitive rescaling, sign conventions, integrality,
-and overflow handling; let existing numerical failures propagate. Save the
-result only after successful construction.
+to express ambient lowering in the generated basis. Normalize the completed target basis uniformly: if its maximal-weight vector
+has squared norm h in the product metric, every basis vector receives the
+same factor ``1/\sqrt{h}``. Thus every Gram block is divided by h, inverse
+Gram blocks are multiplied by h, and lowering matrices are unchanged. Do not
+normalize weight spaces or basis columns independently. Represent this common
+normalization through exact Gram-block division rather than introducing
+floating-point square roots into the basis construction. If this division or
+construction of integer basis/generator data requires a nonintegral rational
+value, raise an error; do not truncate or promote the storage to rationals.
+The existing rational factors representing inverse metrics remain supported.
 
-The generated basis columns are the embedding data corresponding to a CG
-multiplet. Returning a full CG tensor is not required for fundamental bootstrap.
-Once the new irrep exists, ordinary CG3 construction may use it normally.
+Construct inverse metrics consistently with the normalized Gram blocks.
+Preserve primitive rescaling, sign conventions, integrality, and overflow
+handling; let existing numerical failures propagate. Save only the successfully
+constructed, normalized `Irep`.
+
+Return an `Irep`; a full CG tensor is not required for bootstrap.
 
 ## Integration sequence
 
-1. Implement and integrate direct minuscule seeds, including SO(7) spin.
-2. Generalize the selected-component builder and extract SO(7) `(0, 1, 0)`
+1. Implement and integrate direct minuscule seeds, including the SO(8) vector and both half-spin seeds.
+2. Generalize the selected-component builder and extract SO(8) `(0, 1, 0, 0)`
    from two defining irreps without preloading the target.
-3. Encode the classical and exceptional fundamental recipes in fixed dependency
-   order, including the staged binary forms of the table's tensor powers.
+3. Encode the in-scope classical and E6/E7 fundamental recipes in fixed dependency
+   order, including staged binary forms of the tensor powers.
 4. Replace the blanket exterior-power bootstrap with per-target recipe dispatch.
-   Retain existing realizations as comparison cases or explicit seed recipes.
+   Remove the alternating-product irrep backend after migrating its in-scope
+   callers. Audit out-of-scope callers before deleting shared code. Existing
+   realizations may serve as migration comparisons, not retained backends.
 5. Keep general dominant-weight recursion through the maximal Cartan component
    of known fundamentals. Update label adapters, duality, and cache conventions.
 
+## Canonical consistency of incidental irreps
+
+Validate every nonfundamental irrep generated while obtaining fundamentals
+from product representations, including every multiplicity copy. Here the
+validation scope is all such nonfundamental results, not irreps ordered by
+dimension or enumeration of arbitrary tensor-product cycles.
+
+The canonical path uses the fixed fundamental recipes and the fixed
+dominant-weight split/maximal-component construction for nonfundamental labels.
+Factor order and split selection are deterministic.
+
+The highest-weight crystal and fixed Demazure traversal determine basis order.
+Use the same operator sequence, frozen source counts, first-discovery rule,
+and divided-power factors in every embedding. Do not order traversal by
+ambient integer symbol values or dictionary iteration. Uniform highest-weight
+normalization then gives the same intrinsic basis convention. No separate
+basis recipe or change-of-basis stage is needed.
+
+Validation proceeds in two phases:
+
+1. Construct the fundamentals needed for the validation run and save them in
+   the database. Record every incidental nonfundamental `Irep`, including all
+   copies, with its source pair and target label. Do not save these incidental
+   candidates in the canonical irrep cache or database.
+2. After the fundamentals are saved, obtain each recorded target through its
+   canonical path using those saved fundamentals, and compare every candidate
+   against that reference. Reuse a canonical reference for repeated targets.
+   Reference construction does not recursively launch another validation run.
+
+Require the same `Irep` type and equality of every representation field: `Sl`, `Sz`,
+`innerprod`, `inv_innerprod`, `qlabel`, and `dimension`. Exclude `size_byte`. Compare
+field values, not object identity. In particular, compare the stored inverse
+metric matrices and factors themselves, not only their represented product.
+Reduce inverse-metric matrix entries to relatively prime integers, absorbing
+the common factor into the rational scalar. Only inverse metrics may be
+rational. Existing databases are removed before validation; old entries are
+not canonical references. Hard-coded recipes also specify the fundamental
+construction sequence so all canonical dependencies are saved before checks.
+Do not accept an intertwiner as a substitute for field equality. Different
+multiplicity copies have different ambient embeddings but must produce the
+same `Irep` fields.
+
+For example, extracting the SO(8) adjoint `(0, 1, 0, 0)` from the vector square
+first produces `(2, 0, 0, 0)`. Compare that incidental 35-dimensional irrep
+with the canonical maximal-component construction of `(2, 0, 0, 0)` from two
+vector fundamentals. Apply the same check to all nonfundamental components arising
+in the C, D, E6, and E7 fundamental recipes.
+
+Validation bookkeeping stays outside the production hot path. Report deferred
+or skipped targets explicitly; fundamental-bootstrap validation is complete
+only when every recorded candidate has passed. Avoid retaining full ambient
+embeddings after extraction when the normalized irrep data suffices.
+
+## Validation by independent construction paths
+
+Use ordinary per-family functions returning concrete tuples. Each validation
+rule contains the target q-label, two ordered source pairs, deterministic copy
+indices, and rank restrictions. Keep construction recipes and validation rules
+separate so a failed comparison identifies both paths.
+
+Let `A` denote the adjoint and `F_k*` the dual fundamental. The adjoint occurs
+in `R tensor R*` for every nontrivial irrep R of a simple Lie algebra: the Lie
+algebra action embeds the adjoint in `End(R)`. Hard-code the following baseline
+and alternative paths, then extend the alternative column to every fundamental
+not already covered by the baseline.
+
+| Family | Target A | Baseline sources | Alternative sources |
+| --- | --- | --- | --- |
+| A_r, r≥3 | ``\omega_1+\omega_r`` | `F_1, F_r` | `F_k, F_{r+1-k}`, k=2,…,r−1 |
+| C_r, r≥2 | ``2\omega_1`` | `F_1, F_1` | `F_k, F_k`, k=2,…,r |
+| D_r, r≥4 | ``\omega_2`` | `F_1, F_1` | `F_k, F_k*`, k=2,…,r |
+| E6 | ``\omega_2`` (78) | `F_1, F_6` | `F_3, F_5`; `F_2, F_2`; `F_4, F_4` |
+| E7 | ``\omega_1`` (133) | `F_7, F_7` | `F_k, F_k`, k=1,…,6 |
+
+Encode duality explicitly: A reverses nodes; C fundamentals are self-dual;
+D half-spin nodes are exchanged for odd r and self-dual for even r, while
+other D fundamentals are self-dual; E6 exchanges 1↔6 and 3↔5, fixing 2 and 4;
+all E7 fundamentals are self-dual. Avoid duplicate comparisons related only
+by reversing the same source pair. Check dual seed weight sets separately.
+
+For A1 and A2, compare the baseline adjoint from `F_1 tensor F_1*` with the
+adjoint from `A tensor A`. Apply these rules through the C1/D3 adapters. For
+D2 validate each A1 factor separately, with the other factor trivial; do not
+apply the simple-algebra rule to a single combined adjoint.
+
+These are construction-consistency checks. Mathematical correctness is also
+covered by existing tests, including the Sp(6) irrep dimension test, and the
+separate large-scale tests. Do not duplicate those suites here. Performance
+policy for large exceptional validation runs is deferred.
+
+For SO(8), construct `(0, 0, 2, 0)` independently from:
+
+- `(0, 0, 1, 0)` tensor `(0, 0, 1, 0)`;
+- `(0, 1, 0, 0)` tensor `(0, 1, 0, 0)`.
+
+Both contain this 35-dimensional irrep. Repeat for the other chirality,
+`(0, 0, 0, 2)`, using its half-spin square and the adjoint square.
+Vector tensor adjoint is not an alternative for these targets:
+`8 tensor 28 = 8 + 56 + 160`.
+
+Build both results independently without allowing the target cache to return
+the first result for the second path. Use the same Demazure and normalization
+conventions and require equality of all `Irep` fields, as above.
+
 ## Completion
 
-Use small cases in existing test files. Start with SO(7): verify the 7-dimensional
-defining seed, 8-dimensional spin seed, and construction of the 21-dimensional
+Use small cases in existing test files. Start with SO(8): verify all three
+8-dimensional minuscule seeds and construction of the 28-dimensional
 target from the vector square with no preexisting target cache entry. Check the
 highest vector is killed by raising operators, the resulting dimensions and
-weights, generator relations, and metric compatibility. Compare the target with
-its existing exterior-square realization through an intertwining transformation.
+weights, generator relations, and metric compatibility. Verify unit norm of
+the maximal-weight state and uniform rescaling of all Gram blocks. Compare the target with
+the existing exterior-square realization through an intertwining transformation
+during migration, before removing that backend.
 
+Check that seed vertices have one-element `Vector{Int}` words, seed symbol
+ranges do not collide and are independent of request order, and tensor words
+preserve factor order and their weights under raising/lowering.
+Run canonical-identity checks for every incidental nonfundamental irrep and copy generated during
+fundamental construction, then the independent-path checks above.
 Cover one repeated-copy target and an absent-target request. Check deterministic
 copy selection, correct recursive recipe dispatch, and cache reload. Exercise
 E6/E7 minuscule seeds and representative nonmaximal fundamental components;
-F4/E8 recipes become executable when their later seed backends are ready.
+verify removal of the alternating-product irrep backend and its callers.
 Retain existing CG/recoupling checks, type-stability inspection, and relevant
 allocation measurements. No new rank-check gate is required.
+
+## Implementation entry points
+
+- `initialize_symmetry(S, RT)` validates S and saves only the trivial irrep.
+- `fundamental_sequence(S)` and `fundamental_sources(S, k)` encode dependency
+  order and ordered source nodes; `getNsave_irep` executes recipes on demand.
+- `get_minuscule_irep(S, RT, k)` constructs a seed without database access.
+- `get_irep_frommw` performs exact preceding-multiplet extraction; optional
+  `copy_index` selects a repeated copy and `candidates` records incidental
+  nonfundamental results outside the canonical cache.
+- `validate_fundamental_ireps(S, RT)` saves fundamentals in sequence, then
+  compares every recorded copy with its canonical result.
+- `fundamental_validation_rules(S)` lists finite cross-product rules;
+  `validate_fundamental_products(S, RT; rules=...)` executes them explicitly.
+- `same_irep_fields(a, b)` compares every representation field except
+  `size_byte`; it does not perform a change of basis.
+
+The alternating-product backend and bulk `get_fundamental_ireps` entry point
+are removed. Nontrivial B/G2 irrep requests are unavailable until their
+virtual-crystal backend is implemented; there is no legacy seed fallback.
+The `minuscule-v2` cache namespace prevents reuse of old basis data.
 
 ## Reference
 

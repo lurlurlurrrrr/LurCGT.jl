@@ -230,3 +230,31 @@ function fundamental_qlabels(::Type{SU{N}}) where N
 	end
 	return funda_lst
 end
+
+"""
+    fundamental_sequence(S) -> Vector{Int}
+
+Return the fixed dependency order for on-demand fundamental recipes. Seeds
+precede every product that uses them; callers need not construct unused nodes.
+"""
+fundamental_sequence(::Type{SU{N}}) where N = collect(1:N-1)
+
+"""`minuscule_nodes(S)` returns the ordered minuscule fundamental nodes."""
+minuscule_nodes(::Type{SU{N}}) where N = collect(1:N-1)
+
+"""`_has_minuscule_recipes(SU)` reports whether Part 3a recipes are available."""
+_has_minuscule_recipes(::Type{SU{N}}) where N = true
+
+"""`_minuscule_symbol_start(SU)` reserves the existing vector alphabet."""
+_minuscule_symbol_start(::Type{SU{N}}) where N = nzops(SU{N})+2
+
+"""`_preserve_vector_symbols(SU, k)` keeps vector-seed symbol assignments compatible."""
+_preserve_vector_symbols(::Type{SU{N}}, k::Int) where N = k == 1
+
+"""`fundamental_validation_rules(SU)` returns fixed ordered target/source checks, including family-specific cases."""
+function fundamental_validation_rules(::Type{S}) where {S<:SU}
+    adjoint = _unit_label(S,1) .+ _unit_label(S,nzops(S))
+    rules = _fundamental_validation_rules(S,adjoint)
+    nzops(S) <= 2 && push!(rules,(adjoint,adjoint,adjoint))
+    return rules
+end

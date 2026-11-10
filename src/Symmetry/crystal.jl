@@ -32,13 +32,18 @@ const _CRYSTAL_WEIGHT_DATA_LOCK = ReentrantLock()
 """
     _crystal_weight_data(::Type{S}) -> (weights, character_map)
 
-Return cached defining-representation weights and character indices for `S`.
+Return cached symbol weights and indices for the crystal alphabet of `S`.
+Part 3a families include every minuscule seed; legacy families use vector symbols.
 The cache owns these mutable results; callers must treat them as read-only.
 Initialization is synchronized because crystal generation may run concurrently.
 """
 function _crystal_weight_data(::Type{S}) where {S<:NonabelianSymm}
     lock(_CRYSTAL_WEIGHT_DATA_LOCK) do
         return get!(_CRYSTAL_WEIGHT_DATA, S) do
+            if _has_minuscule_recipes(S)
+                weights, charmap, _, _ = _minuscule_alphabet(S)
+                return weights, charmap
+            end
             weights = getsz_def_vec(S)::Vector{Vector{Int}}
             charmap = crystal_chars_map(S)::Dict{Int, Int}
             (weights, charmap)
@@ -49,17 +54,20 @@ end
 """
     mw_crystal_qlabel(S, qlabel) -> CrystalVertex{S}
 
-Construct the highest tensor word in ascending fundamental-node order by
-concatenating `mw_column(S, i, qlabel)` for each fundamental node `i`. The
-symmetry method handles its label convention and returns all columns for `i`.
-The returned word is owned.
+Construct the highest tensor word in ascending fundamental-node order from
+minuscule symbols and fixed fundamental recipes. Legacy families delegate to
+`mw_column`. The returned word is owned.
 """
 function mw_crystal_qlabel(::Type{S}, qlabel::NTuple{NZ, Int}) where {S<:NonabelianSymm, NZ}
     @assert NZ == nlops(S)
     @assert all(>=(0), qlabel)
     word = Int[]
     for i in 1:NZ
-        append!(word, mw_column(S, i, qlabel))
+        if _has_minuscule_recipes(S)
+            iszero(qlabel[i]) || append!(word, repeat(_fundamental_word(S,i), qlabel[i]))
+        else
+            append!(word, mw_column(S, i, qlabel))
+        end
     end
     return CrystalVertex{S}(word)
 end
@@ -82,6 +90,7 @@ Build local lowering/raising maps and their string lengths from the existing
 symbol alphabet of `S`. No tensor-product vertices are enumerated.
 """
 function get_crystal_ops(::Type{S}) where S <: NonabelianSymm
+    _has_minuscule_recipes(S) && return _minuscule_alphabet(S)[4]
     char_list = charlist(S)
     f = get_fops_std(S)
     e = get_eops_std(f)
@@ -234,7 +243,8 @@ end
 """
     get_weight(vertex::CrystalVertex{S}) -> NTuple{nzops(S),Int}
 
-Sum the existing symbol weights in the package's z-coordinate convention.
+Sum symbol weights in the package's z-coordinate convention, including all
+registered minuscule alphabets.
 The word is read-only; equal weights do not imply equal vertices.
 """
 function get_weight(vertex::CrystalVertex{S}) where S <: NonabelianSymm
@@ -350,15 +360,7 @@ Construct a deterministic chronological reduced word for the E6 longest Weyl
 element from its Cartan matrix, choosing the smallest length-increasing node.
 """
 function crystal_lowering_word(::Type{E6})
-    cartan = [2 -1 0 0 0 0;
-              -1 2 -1 0 0 0;
-              0 -1 2 -1 0 0;
-              0 0 -1 2 -1 0;
-              0 0 0 -1 2 -1;
-              0 0 0 0 -1 2]
-    # E6 diagram branches at node 4; node 2 attaches there.
-    cartan[2, 3] = cartan[3, 2] = 0
-    cartan[2, 4] = cartan[4, 2] = -1
+    cartan = _exceptional_cartan(E6)
     images = Matrix{Int}(I, 6, 6)
     word = Int[]
     while true
@@ -371,8 +373,9 @@ function crystal_lowering_word(::Type{E6})
         end
         iszero(chosen) && break
         # Right-multiply the represented Weyl element by the chosen reflection.
+        chosen_image = copy(images[:, chosen])
         for j in 1:6
-            images[:, j] -= cartan[chosen, j] .* images[:, chosen]
+            images[:, j] -= cartan[chosen, j] .* chosen_image
         end
         push!(word, chosen)
     end

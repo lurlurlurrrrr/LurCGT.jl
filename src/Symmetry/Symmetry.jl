@@ -13,7 +13,7 @@ abstract type U1 <: AbelianSymm end
 abstract type SU{N} <: NonabelianSymm end
 """``\\mathrm{Sp}(N)`` is the compact symplectic non-Abelian family; its Julia type parameter `N` and q-labels use this library's Dynkin convention."""
 abstract type Sp{N} <: NonabelianSymm end
-"""``\\mathrm{SO}(N)`` is the special-orthogonal non-Abelian family; its Julia type parameter `N` is the defining-group dimension and q-labels use this library's Dynkin convention."""
+"""``\\mathrm{SO}(N)`` denotes the orthogonal Lie-algebra family; even `N` includes Spin(N) half-spin irreps, which need not descend to SO(N). Its Julia type parameter `N` is the vector dimension and q-labels are Dynkin labels."""
 abstract type SO{N} <: NonabelianSymm end
 """`G2` is the exceptional rank-two non-Abelian symmetry family with two-component Dynkin q-labels."""
 abstract type G2 <: NonabelianSymm end
@@ -93,8 +93,9 @@ getszdiag(::Any) = error("Not implemented")
     get_dualq(S, q) -> qdual
 
 Return the q-label of the dual irrep of non-Abelian symmetry family `S`.
-For `SU`, duality reverses the Dynkin-label tuple; the currently supported
-non-Abelian families are self-dual in this q-label representation.
+For `SU`, duality reverses Dynkin labels. E6 and odd-rank even-orthogonal
+families specialize the node permutation; the remaining supported families
+are self-dual.
 
 `S` selects the non-Abelian symmetry family and `q` is one q-label tuple for
 that family.

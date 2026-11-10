@@ -31,3 +31,25 @@ using Test
         end
     end
 end
+
+@testset "Symmetry initialization saves only the trivial irrep" begin
+    @test_throws ArgumentError LurCGT.initialize_symmetry(SU{1}, BigInt; verbose=0)
+    mktempdir() do tmp
+        withenv("LURCGT_LOCALDB_DIR" => joinpath(tmp, "local"),
+                "LURCGT_GLOBALDB_DIR" => joinpath(tmp, "global")) do
+            try
+                LurCGT.close_all_sqlite_dbs()
+                trivial = LurCGT.initialize_symmetry(SU{4}, BigInt; verbose=0)
+                @test dimension(trivial) == 1
+                @test dimension(LurCGT.load_irep_sqlite(SU{4}, BigInt, (0, 0, 0); verbose=0)) == 1
+                @test isnothing(LurCGT.load_irep_sqlite(SU{4}, BigInt, (1, 0, 0); verbose=0))
+                @test dimension(LurCGT.initialize_symmetry(SU{4}, BigInt; verbose=0)) == 1
+                @test dimension(LurCGT.getNsave_irep(SU{5},BigInt,(1,0,0,0);verbose=0)) == 5
+                @test dimension(LurCGT.load_irep_sqlite(SU{5},BigInt,(0,0,0,0);verbose=0)) == 1
+                @test isnothing(LurCGT.load_irep_sqlite(SU{5},BigInt,(0,1,0,0);verbose=0))
+            finally
+                LurCGT.close_all_sqlite_dbs()
+            end
+        end
+    end
+end

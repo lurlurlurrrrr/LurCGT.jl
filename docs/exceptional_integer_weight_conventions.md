@@ -1,42 +1,37 @@
 # Integer q-labels and weight coordinates for E6, E7, E8, and F4
 
-Status: standalone coordinate proposal. This adds no symmetry implementation,
-representation backend, or spin support, and does not change existing A–D/G2
-conventions or the scope of the crystal-vertex replacement.
+Status: coordinate specification. E6/E7 conversions are implemented in
+[E6.jl](../src/Symmetry/E6.jl) and [E7.jl](../src/Symmetry/E7.jl);
+E8/F4 remain coordinate proposals.
+Existing A–D/G2 weight-coordinate conventions remain unchanged.
 
-## Recommendation
+## Storage and ordering
 
-Yes: q-labels and every weight can be represented by rank-length integer tuples
-for all four families. Keep q-labels as fundamental-weight coefficients (Dynkin
-labels), and store weights in **scaled simple-root coordinates**. This gives
-explicit integral conversions and particularly simple lowering steps while
-preserving LurCGT's current highest-first sorting convention.
-
-Let q be the q-label of the highest weight λ, A the Cartan matrix defined below,
-and d the family-dependent denominator-clearing factor. Define ``M=dA^{-1}``.
-Then the proposed API meanings are
+Keep q-labels in Dynkin-node order, but store **reversed scaled simple-root
+coordinates**. For a weight ``\mu=\sum_i c_i\alpha_i``, define
 
 ```math
-\boxed{\operatorname{qlab2mwz}(q)=Mq,\qquad
-\operatorname{getqlabel}(z)=Az/d,\qquad
-\operatorname{getdz}(i)=d\,\mathbf e_i.}
+z=dPc,\qquad (Pc)_j=c_{r+1-j},\qquad P^2=I.
 ```
 
-All vectors in the formulas are columns; Julia can continue storing weights and
-q-labels as `NTuple{r,Int}`. Here ``\mathbf e_i`` is the coordinate unit vector,
-not a crystal raising operator.
+The reversal applies only to stored weight coordinates, not to q-labels,
+Cartan nodes, or lowering-operator indices. All vectors below are columns;
+Julia storage remains `NTuple{r,Int}`.
 
-| Family | Rank r | d | Stored weight z for ``\mu=\sum_j c_j\alpha_j`` |
+| Family | Rank r | Scale d | Stored coordinate |
 | --- | ---: | ---: | --- |
-| E6 | 6 | 3 | ``z_j=3c_j`` |
-| E7 | 7 | 2 | ``z_j=2c_j`` |
-| E8 | 8 | 1 | ``z_j=c_j`` |
-| F4 | 4 | 1 | ``z_j=c_j`` |
+| E6 | 6 | 3 | ``z_j=3c_{7-j}`` |
+| E7 | 7 | 2 | ``z_j=2c_{8-j}`` |
+| E8 | 8 | 1 | ``z_j=c_{9-j}`` |
+| F4 | 4 | 1 | ``z_j=c_{5-j}`` |
 
-These factors are the least common denominators of the corresponding inverse
-Cartan matrices, computed exactly below. They apply to **every integral weight**,
-not only dominant highest weights. The stored coordinates are not orthogonal
-Cartesian coordinates; their metric is given later in this note.
+The previous unreversed proposal made every lowering decrease the reversed
+lexicographic order, but did not match the required operator-to-slot order.
+With this convention, operator 1 reduces the last coordinate; operator 2
+leaves the last fixed and reduces the second-last; operator i reduces slot
+r+1−i and leaves every other coordinate fixed. Thus every nonzero lowering
+strictly decreases `reverse(z)` lexicographically, as required by `rev_less`
+and `sorted_zvals` in [sort.jl](../src/sort.jl).
 
 ## Node numbering and Cartan convention
 
@@ -81,40 +76,31 @@ A_{F4}=\begin{pmatrix}
 In particular ``A_{23}=-1`` and ``A_{32}=-2``. Do not copy a transposed
 Cartan matrix while retaining the same conversion formulas.
 
-## Q-label to maximal weight, and the inverse
+## Conversion tables
 
-For the irreducible highest weight, take
+With the Cartan convention above, Dynkin coordinates satisfy ``a=Ac``.
+Define ``M=dPA^{-1}``. Then
 
 ```math
-q=(q_1,\ldots,q_r),\quad q_i\in\mathbb Z_{\geq0},\qquad
-\lambda=\sum_i q_i\omega_i.
+\operatorname{qlab2mwz}(q)=Mq,\qquad
+\operatorname{getqlabel}(z)=APz/d,\qquad
+\operatorname{getdz}(i)=d\mathbf e_{r+1-i}.
 ```
 
-This labels Lie-algebra irreps, equivalently irreps of the simply connected
-compact group; a specified quotient group can restrict which labels are allowed.
-The conventions below do not impose such a quotient restriction.
-
-Write any weight as ``\mu=\sum_i c_i\alpha_i`` and let
-``a_i=\langle\alpha_i^\vee,\mu\rangle``. Then ``a=Ac``. Set ``z=dc``,
-so ``z=Ma`` and ``a=Az/d``. For the highest weight, ``a=q``. This proves
-both conversion directions and explains why the same conversion works on
-all weights, even though their Dynkin coordinates need not be nonnegative.
-
-The following matrices are derived by exact inversion of the Cartan matrices
-specified above. Column k of M is the stored maximal weight for q-label
-``q=\mathbf e_k``. They are proposed LurCGT coordinate tables, not copied
-orthogonal-coordinate weight tables.
+The factors d are the least denominators clearing the inverse Cartan matrices.
+Column k of each M below is the maximal stored weight of fundamental k.
+These are row reversals of the previous tables; do not reverse their columns.
 
 ### E6
 
 ```math
 M_{E6}=\begin{pmatrix}
-4 & 3 & 5 & 6 & 4 & 2 \\
-3 & 6 & 6 & 9 & 6 & 3 \\
-5 & 6 & 10 & 12 & 8 & 4 \\
-6 & 9 & 12 & 18 & 12 & 6 \\
+2 & 3 & 4 & 6 & 5 & 4 \\
 4 & 6 & 8 & 12 & 10 & 5 \\
-2 & 3 & 4 & 6 & 5 & 4
+6 & 9 & 12 & 18 & 12 & 6 \\
+5 & 6 & 10 & 12 & 8 & 4 \\
+3 & 6 & 6 & 9 & 6 & 3 \\
+4 & 3 & 5 & 6 & 4 & 2
 \end{pmatrix}.
 ```
 
@@ -122,13 +108,13 @@ M_{E6}=\begin{pmatrix}
 
 ```math
 M_{E7}=\begin{pmatrix}
-4 & 4 & 6 & 8 & 6 & 4 & 2 \\
-4 & 7 & 8 & 12 & 9 & 6 & 3 \\
-6 & 8 & 12 & 16 & 12 & 8 & 4 \\
-8 & 12 & 16 & 24 & 18 & 12 & 6 \\
-6 & 9 & 12 & 18 & 15 & 10 & 5 \\
+2 & 3 & 4 & 6 & 5 & 4 & 3 \\
 4 & 6 & 8 & 12 & 10 & 8 & 4 \\
-2 & 3 & 4 & 6 & 5 & 4 & 3
+6 & 9 & 12 & 18 & 15 & 10 & 5 \\
+8 & 12 & 16 & 24 & 18 & 12 & 6 \\
+6 & 8 & 12 & 16 & 12 & 8 & 4 \\
+4 & 7 & 8 & 12 & 9 & 6 & 3 \\
+4 & 4 & 6 & 8 & 6 & 4 & 2
 \end{pmatrix}.
 ```
 
@@ -136,14 +122,14 @@ M_{E7}=\begin{pmatrix}
 
 ```math
 M_{E8}=\begin{pmatrix}
-4 & 5 & 7 & 10 & 8 & 6 & 4 & 2 \\
-5 & 8 & 10 & 15 & 12 & 9 & 6 & 3 \\
-7 & 10 & 14 & 20 & 16 & 12 & 8 & 4 \\
-10 & 15 & 20 & 30 & 24 & 18 & 12 & 6 \\
-8 & 12 & 16 & 24 & 20 & 15 & 10 & 5 \\
-6 & 9 & 12 & 18 & 15 & 12 & 8 & 4 \\
+2 & 3 & 4 & 6 & 5 & 4 & 3 & 2 \\
 4 & 6 & 8 & 12 & 10 & 8 & 6 & 3 \\
-2 & 3 & 4 & 6 & 5 & 4 & 3 & 2
+6 & 9 & 12 & 18 & 15 & 12 & 8 & 4 \\
+8 & 12 & 16 & 24 & 20 & 15 & 10 & 5 \\
+10 & 15 & 20 & 30 & 24 & 18 & 12 & 6 \\
+7 & 10 & 14 & 20 & 16 & 12 & 8 & 4 \\
+5 & 8 & 10 & 15 & 12 & 9 & 6 & 3 \\
+4 & 5 & 7 & 10 & 8 & 6 & 4 & 2
 \end{pmatrix}.
 ```
 
@@ -151,145 +137,102 @@ M_{E8}=\begin{pmatrix}
 
 ```math
 M_{F4}=\begin{pmatrix}
-2 & 3 & 2 & 1 \\
-3 & 6 & 4 & 2 \\
+2 & 4 & 3 & 2 \\
 4 & 8 & 6 & 3 \\
-2 & 4 & 3 & 2
+3 & 6 & 4 & 2 \\
+2 & 3 & 2 & 1
 \end{pmatrix}.
 ```
 
-The E-family inverse can be written without a dense matrix multiply:
+## Inverse, lattice, and lowering checks
+
+Let ``u=Pz`` (equivalently, `u = reverse(z)`). For E6–E8,
 
 ```math
-q_j=\frac{2z_j-\sum_{k\sim j}z_k}{d},
+a_j=(2u_j-\sum_{k\sim j}u_k)/d.
 ```
 
-where the sum runs over neighbors in the specified Dynkin diagram. For F4,
-where d=1, the inverse is explicitly
+For F4,
 
 ```math
 \begin{aligned}
-q_1&=2z_1-z_2,\\
-q_2&=-z_1+2z_2-z_3,\\
-q_3&=-2z_2+2z_3-z_4,\\
-q_4&=-z_3+2z_4.
+a_1&=2z_4-z_3,\\
+a_2&=-z_4+2z_3-z_2,\\
+a_3&=-2z_3+2z_2-z_1,\\
+a_4&=-z_2+2z_1.
 \end{aligned}
 ```
 
-For E6/E7, an arbitrary integer tuple z is a valid integral weight **only if**
-every entry of Az is divisible by d. Equivalently, the stored weight lattice
-is ``M\mathbb Z^r``. Use exact divisibility checks, not truncating division.
-For E8/F4, every integer z is a lattice weight. In all cases, dominance requires
-``Az/d\geq0`` componentwise; nonnegative z alone does not imply dominance.
+For E6/E7, require exact divisibility of every entry of `APz` by d;
+an arbitrary integer tuple need not represent an integral weight. E8/F4
+accept every integer tuple as a lattice weight. Dominance requires
+``APz/d\geq0`` componentwise, not merely nonnegative z. The inverse gives
+an irrep q-label only for a highest weight; for other weights it gives signed
+Dynkin coordinates.
 
-`getqlabel` on a known maximal weight returns its irrep q-label. Applying the
-same algebraic inverse to a non-highest weight gives signed Dynkin coordinates,
-not the q-label of a different irrep. Keep that distinction in callers.
-
-## Decrease under each lowering operator
-
-Whenever a lowering operator acts nontrivially, its weight changes by
-``\mu\mapsto\mu-\alpha_i``. Therefore
+`getdz` is the quantity subtracted, not the signed increment. Lowering and
+raising at node i subtract and add ``d\mathbf e_{r+1-i}``, respectively.
+In Dynkin coordinates, lowering subtracts column i of A. The identities
 
 ```math
-z\mapsto z-d\mathbf e_i.
+APM=dI,\qquad MA=dP,\qquad
+M(a-A_{:,i})=Ma-d\mathbf e_{r+1-i}
 ```
 
-| Family | `getdz(i)` | Actual change to stored weight |
-| --- | --- | --- |
-| E6 | 3 in slot i, zero elsewhere | ``z_i\gets z_i-3`` |
-| E7 | 2 in slot i, zero elsewhere | ``z_i\gets z_i-2`` |
-| E8 | 1 in slot i, zero elsewhere | ``z_i\gets z_i-1`` |
-| F4 | 1 in slot i, zero elsewhere | ``z_i\gets z_i-1`` |
-
-This uses the same sign convention as the current code: `getdz` returns the
-quantity **subtracted**, as in `nw = ow .- getdz(S, i)` in
-[`src/irep.jl`](../src/irep.jl). It is not the signed increment `nw - ow`.
-Raising adds the same tuple. After k steps of color i, subtract ``kd\mathbf e_i``.
-
-In Dynkin coordinates the same operation is ``a\mapsto a-A_{:,i}``;
-``M A=dI`` makes these descriptions identical. These formulas determine the
-weight change, not whether an operator is nonzero on a particular vertex or
-vector. Existence of the action still comes from the crystal or numerical module.
-The crystal identity is ``\phi_i-\epsilon_i=(Az)_i/d``.
-
-### Examples
+make these descriptions consistent. The crystal pairing is
+``\phi_i-\epsilon_i=(APz)_i/d``. These formulas specify weight changes;
+the crystal or numerical representation determines whether an action exists.
 
 | Family and highest q-label | Maximal z | First lowering | Resulting z |
 | --- | --- | --- | --- |
-| E6, `(1,0,0,0,0,0)` | `(4,3,5,6,4,2)` | color 1 | `(1,3,5,6,4,2)` |
-| E7, `(0,0,0,0,0,0,1)` | `(2,3,4,6,5,4,3)` | color 7 | `(2,3,4,6,5,4,1)` |
-| E8, `(0,0,0,0,0,0,0,1)` | `(2,3,4,6,5,4,3,2)` | color 8 | `(2,3,4,6,5,4,3,1)` |
-| F4, `(0,0,0,1)` | `(1,2,3,2)` | color 4 | `(1,2,3,1)` |
+| E6, `(1,0,0,0,0,0)` | `(2,4,6,5,3,4)` | color 1 | `(2,4,6,5,3,1)` |
+| E7, `(0,0,0,0,0,0,1)` | `(3,4,5,6,4,3,2)` | color 7 | `(1,4,5,6,4,3,2)` |
+| E8, `(0,0,0,0,0,0,0,1)` | `(2,3,4,5,6,4,3,2)` | color 8 | `(1,3,4,5,6,4,3,2)` |
+| F4, `(0,0,0,1)` | `(2,3,2,1)` | color 4 | `(1,3,2,1)` |
 
-For the F4 example, the last tuple converts to Dynkin coordinates `(0,0,1,-1)`.
-The negative entry is expected for a non-highest weight.
+The final F4 tuple has Dynkin coordinates `(0,0,1,-1)`, as expected for a
+non-highest weight. An example's first available lowering need not be color 1.
 
-## Fit with LurCGT's existing conventions
+## Cartan operators and root-space metric
 
-The current library already distinguishes q-labels from stored z-weights:
-[`SU.jl`](../src/Symmetry/SU.jl), [`Sp.jl`](../src/Symmetry/Sp.jl),
-[`SO.jl`](../src/Symmetry/SO.jl), and [`G2.jl`](../src/Symmetry/G2.jl) supply
-family-specific `qlab2mwz`, `getqlabel`, and `getdz`. For example, G2 maps
-`(a,b)` to `(a,a+2b)`; SO uses doubled orthogonal coordinates. Thus exceptional
-families can choose a different integral coordinate basis without changing the
-meaning of the existing families' tuples.
-
-This proposal keeps:
-
-- `nlops = nzops = rank`, with rank-length integer tuple sector keys.
-- Addition of weights in tensor products and negation under dualization.
-- A constant `getdz(i)` for each simple lowering operator.
-- The highest-first reverse-lexicographic sort in
-  [`src/sort.jl`](../src/sort.jl), also used by
-  [`src/clebsch.jl`](../src/clebsch.jl). Every lowering strictly decreases one
-  coordinate and leaves the others fixed, so it strictly decreases that order.
-
-One could instead store Dynkin coordinates directly, making `qlab2mwz(q)=q` and
-`getdz(i)=A[:,i]`. However, off-diagonal negative entries cause some coordinates
-to increase under lowering. For example, in F4 subtracting column 1 increases
-the second coordinate. The existing reverse-lexicographic sort would then place
-that lowered weight above its source. Scaled root coordinates avoid this ordering
-change without introducing an extra grade or extra stored coordinate.
-
-The z values can also be interpreted as eigenvalues of commuting Cartan operators
-``Z_j=d\sum_k(A^{-1})_{jk}H_k``, where ``H_k=\alpha_k^\vee``. Then
-``[Z_j,F_i]=-d\delta_{ji}F_i``. For Chevalley relations, recover the usual coroot
-eigenvalues as ``H_i:(Az)_i/d``; z itself is not the list of coroot eigenvalues.
-
-If a root-space scalar product is needed, use the coordinate metric rather than
-an ordinary dot product. Let ``D_{ii}=(\alpha_i,\alpha_i)/2``, so ``G=DA`` is
-the symmetric simple-root Gram matrix. Then
+The stored coordinates are not orthogonal Cartesian coordinates. They can be
+interpreted as eigenvalues of
 
 ```math
-(\mu,\nu)=\frac{1}{d^2}z_\mu^{\mathsf T}Gz_\nu.
+Z_j=d\sum_k(PA^{-1})_{jk}H_k,\qquad
+[Z_j,F_i]=-d\delta_{j,r+1-i}F_i,
 ```
 
-For E6–E8, take D=I; for F4's stated normalization, take
-``D=\operatorname{diag}(1,1,1/2,1/2)``. This root-space metric is distinct from
-the existing Gram matrices of representation basis vectors in `Irep.innerprod`.
+where ``H_k=\alpha_k^\vee``. Recover coroot eigenvalues as ``APz/d``.
+For scalar products, let ``D_{ii}=(\alpha_i,\alpha_i)/2`` and ``G=DA``.
+Then
 
-## Implementation guidance and checks
+```math
+(\mu,\nu)=z_\mu^{\mathsf T}PGPz_\nu/d^2.
+```
 
-Precompute the small integer M matrices and fixed root-step tuples. Do not invert
-A or allocate dense matrix intermediates in per-weight loops. The inverse
-conversion uses short integer sums and exact division. Keep tuple return types
-concrete; use checked arithmetic or exact intermediates with checked conversion
-when labels can overflow `Int`. No new data type is needed for these conversions.
-Defining new exceptional symmetry types or numerical backends remains separate work.
+Use D=I for E6–E8 and ``D=\operatorname{diag}(1,1,1/2,1/2)`` for F4.
+This coordinate metric is distinct from the representation-basis Gram matrices
+in `Irep.innerprod`. Weight addition and negation remain componentwise.
 
-The following checks were run for this note with exact rational/integer arithmetic:
+## Implementation guidance and validation
 
-- ``AM=MA=dI`` and the denominator-clearing factors for all four families.
-- Conversion round trips for every fundamental q-label and one mixed label per
-  family; the lowering identity ``M(a-A_{:,i})=Ma-d\mathbf e_i`` for every color.
-- Strict decrease under the existing reversed-coordinate lexicographic order.
-- F4's Cartan matrix independently reconstructed from the stated Euclidean roots.
-- Weyl-reflection closure of the simple roots: 72, 126, 240, and 48 roots for
-  E6, E7, E8, and F4 respectively, with each root having uniformly nonnegative
-  or nonpositive simple-root coordinates.
+Precompute M and the root-step tuples. Use short integer sums and exact division
+for the inverse; no matrix inversion or dense intermediates belong in per-weight
+loops. Keep tuple returns concrete and check arithmetic overflow. No new type
+is needed. Do not store Dynkin coordinates directly as z: lowering can increase
+a later coordinate and violate the existing sorting order.
 
-These are coordinate/algebra checks, not tests of exceptional representations or
-CG coefficients. No Julia implementation, DMRG test, or documentation build was run.
-The coordinate choice and matrices here are derived recommendations; the linked
-Sage documentation supplies the root conventions and node numbering.
+Validate with exact arithmetic:
+
+- `APM = dI`, `MA = dP`, and integral M with the stated minimal scale.
+- Fundamental and mixed-label conversion round trips.
+- Every color's lowering identity, unchanged slots, and positive root-step
+  entry at precisely slot r+1−i.
+- Strict decrease under reversed-coordinate lexicographic comparison.
+- Symmetry of `PGP` and agreement with the unreversed root-space metric.
+
+These are coordinate checks, not exceptional-irrep or CG tests. The linked
+references specify roots and node numbering; the storage reversal is a LurCGT
+convention. No Julia implementation or documentation build is required for this
+proposal change.

@@ -82,17 +82,108 @@ end
     @test conjperm.perm == get_conj_perm(get_CGTom(SU{2}, ((1,), (1,)), ((1,), (1,))))
 end
 
+@testset "deferred virtual-crystal irrep backends" begin
+    for (S,q) in ((SO{5},(1,0)),(SO{7},(0,0,1)),(G2,(1,0)))
+        @test_throws ArgumentError LurCGT.getNsave_irep(S,BigInt,q)
+    end
+end
+
+@testset "exceptional scaled-root coordinates" begin
+    for S in (E6,E7)
+        r = nzops(S); d = S == E6 ? 3 : 2
+        A = LurCGT._exceptional_cartan(S)
+        metric_numerator = reverse(reverse(A; dims=1); dims=2)
+        steps = LurCGT.getdzs(S)
+        labels = [LurCGT._unit_label(S,k) for k in 1:r]
+        push!(labels,ntuple(i -> i,r))
+        for q in labels
+            z = LurCGT.qlab2mwz(S,q)
+            @test LurCGT.getqlabel(S,z) == q
+            for i in 1:r
+                lowered = z .- Tuple(steps[i])
+                @test LurCGT.getqlabel(S,lowered) == q .- Tuple(A[:,i])
+                @test LurCGT.rev_less(lowered,z)
+            end
+        end
+        for i in 1:r
+            @test steps[i] == [j == r+1-i ? d : 0 for j in 1:r]
+            @test LurCGT.qlab2mwz(S,Tuple(A[:,i])) == Tuple(steps[i])
+            for j in 1:r
+                @test dot(steps[i],metric_numerator*steps[j]) == d^2*A[i,j]
+            end
+        end
+        # Coordinate-unit steps for adjacent nodes are not physically orthogonal.
+        @test dot(steps[1],metric_numerator*steps[3]) == -d^2
+    end
+end
+
+@testset "minuscule seeds and integer crystal words" begin
+    for (S,nodes,dims) in ((SU{3},[1,2],[3,3]),(Sp{6},[1],[6]),
+                           (SO{4},[1,2],[2,2]),(SO{6},[1,2,3],[6,4,4]),
+                           (SO{8},[1,3,4],[8,8,8]),(E6,[1,6],[27,27]),(E7,[7],[56]))
+        symbols = Set{Int}()
+        for (k,d) in zip(nodes,dims)
+            q = LurCGT._unit_label(S,k)
+            rep = LurCGT.get_minuscule_irep(S,BigInt,k)
+            @test rep.qlabel == q
+            @test dimension(rep) == d
+            highest = LurCGT.mw_crystal_qlabel(S,q)
+            @test length(highest.word) == 1
+            vertices = LurCGT._component_vertices(S,highest)
+            @test length(vertices) == d
+            for v in vertices
+                @test length(v.word) == 1
+                @test !(only(v.word) in symbols)
+                push!(symbols,only(v.word))
+                @test haskey(rep.Sz,LurCGT.get_weight(v))
+            end
+        end
+    end
+end
+
+@testset "canonical nonfundamental copies after fundamental bootstrap" begin
+    for S in (Sp{4},Sp{6},SO{8})
+        @test LurCGT.validate_fundamental_ireps(S) > 0
+    end
+    @test dimension(LurCGT.getNsave_irep(E6,BigInt,(0,1,0,0,0,0))) == 78
+    @test dimension(LurCGT.getNsave_irep(E7,BigInt,(1,0,0,0,0,0,0))) == 133
+    rules = LurCGT.fundamental_validation_rules(SO{8})
+    @test LurCGT.validate_fundamental_products(SO{8}; rules) == length(rules)
+    rep = LurCGT.getNsave_irep(SU{3},BigInt,(1,1))
+    Sl,Sz,_,wi = LurCGT.tensor_prod_reps(rep,rep)
+    mw = LurCGT.qlab2mwz(SU{3},(1,1))
+    for copy_index in 1:2
+        other = LurCGT.get_irep_frommw(SU{3},Sl,Sz,rep.innerprod,rep.innerprod,mw,wi;copy_index)
+        @test LurCGT.same_irep_fields(rep,other)
+    end
+    @test_throws ArgumentError LurCGT.get_irep_frommw(SU{3},Sl,Sz,rep.innerprod,rep.innerprod,mw,wi;copy_index=3)
+    @test_throws ArgumentError LurCGT.get_irep_frommw(SU{3},Sl,Sz,rep.innerprod,rep.innerprod,(100,100),wi)
+    @test_throws ErrorException LurCGT._exact_divide(BigInt(1),2)
+    @test all(gcd(B)==1 for (B,_) in values(rep.inv_innerprod))
+    lock(LurCGT.IREP_CACHE_LOCK) do
+        delete!(LurCGT.IREP_CACHE,(LurCGT.CRYSTAL_BASIS_VERSION,
+            LurCGT.irep_cache_key(SU{3},BigInt,(1,1))))
+    end
+    @test LurCGT.same_irep_fields(rep,LurCGT.load_irep_sqlite(SU{3},BigInt,(1,1)))
+end
+
 @testset "highest tensor words" begin
-    @test LurCGT.mw_crystal_qlabel(SU{3}, (2, 2)).word == [1, 1, 2, 1, 2, 1]
-    @test LurCGT.mw_crystal_qlabel(Sp{6}, (1, 1, 1)).word == [1, 2, 1, 3, 2, 1]
+    for (S, q) in ((SU{3}, (2,2)), (Sp{6}, (1,1,1)),
+                    (SO{8}, (1,1,2,0)), (SO{8}, (1,1,0,2)),
+                    (SO{8}, (0,0,1,1)))
+        word = LurCGT.mw_crystal_qlabel(S,q)
+        @test word.word isa Vector{Int}
+        @test LurCGT.get_weight(word) == LurCGT.qlab2mwz(S,q)
+    end
     @test LurCGT.mw_crystal_qlabel(G2, (2, 1)).word == [1, 1, 2, 1]
-    # Preserve SO's existing vector-derived label preprocessing and auxiliary column.
     @test LurCGT.mw_crystal_qlabel(SO{7}, (1, 1, 2)).word == [1, 2, 1, 3, 2, 1]
-    @test LurCGT.mw_crystal_qlabel(SO{8}, (1, 1, 2, 0)).word == [1, 2, 1, 4, 3, 2, 1]
-    @test LurCGT.mw_crystal_qlabel(SO{8}, (1, 1, 0, 2)).word == [1, 2, 1, -4, 3, 2, 1]
-    @test LurCGT.mw_crystal_qlabel(SO{8}, (0, 0, 1, 1)).word == [3, 2, 1]
     @test_throws AssertionError LurCGT.mw_crystal_qlabel(SO{7}, (0, 0, 1))
-    @test_throws AssertionError LurCGT.mw_crystal_qlabel(SO{8}, (0, 0, 1, 0))
+end
+
+@testset "SO half-spin labels round trip" begin
+    for q in ((0, 0, 1, 0), (0, 0, 0, 1))
+        @test LurCGT.getqlabel(SO{8}, LurCGT.qlab2mwz(SO{8}, q)) == q
+    end
 end
 
 @testset "chapter 2 tensor product rule" begin
@@ -231,9 +322,8 @@ end
 end
 
 @testset "mixed highest-weight numerical construction" begin
-    for (S, q, dim) in ((SU{3}, (2, 1), 15), (SO{5}, (1, 2), 35),
-                       (Sp{4}, (1, 1), 16), (SO{8}, (1, 1, 0, 0), 160),
-                       (G2, (1, 1), 64), (G2, (2, 1), 189))
+    for (S, q, dim) in ((SU{3}, (2, 1), 15),
+                       (Sp{4}, (1, 1), 16), (SO{8}, (1, 1, 0, 0), 160))
         rep = LurCGT.getNsave_irep(S, BigInt, q)
         @test LurCGT.dimension(rep) == dim
         @test rep.qlabel == q

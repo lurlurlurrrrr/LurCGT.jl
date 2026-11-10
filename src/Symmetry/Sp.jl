@@ -239,3 +239,34 @@ function fundamental_qlabels(::Type{Sp{N}}) where N
 	end
 	return funda_lst
 end
+
+"""`fundamental_sequence(Sp{N})` orders the vector-generated fundamentals."""
+fundamental_sequence(::Type{Sp{N}}) where N = collect(1:div(N, 2))
+
+"""`minuscule_nodes(Sp{N})` contains only the vector node."""
+minuscule_nodes(::Type{Sp{N}}) where N = [1]
+
+"""
+    fundamental_sources(S, k) -> (left_node, right_node)
+
+Return the ordered binary recipe for nonminuscule fundamental k. Seed nodes
+are constructed directly and must not be passed to this function.
+"""
+fundamental_sources(::Type{Sp{N}}, k::Int) where N = (k-1, 1)
+
+"""`_has_minuscule_recipes(Sp)` reports whether Part 3a recipes are available."""
+_has_minuscule_recipes(::Type{Sp{N}}) where N = true
+
+"""`_minuscule_symbol_start(Sp)` reserves the existing vector alphabet."""
+_minuscule_symbol_start(::Type{Sp{N}}) where N = nzops(Sp{N})+1
+
+"""`_preserve_vector_symbols(Sp, k)` keeps vector-seed symbol assignments compatible."""
+_preserve_vector_symbols(::Type{Sp{N}}, k::Int) where N = k == 1
+
+"""`fundamental_validation_rules(Sp)` returns fixed ordered target/source checks, including family-specific cases."""
+function fundamental_validation_rules(::Type{S}) where {S<:Sp}
+    adjoint = 2 .* _unit_label(S,1)
+    rules = _fundamental_validation_rules(S,adjoint)
+    S == Sp{2} && push!(rules,(adjoint,adjoint,adjoint))
+    return rules
+end

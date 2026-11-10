@@ -1,47 +1,21 @@
 const WeightInfo{NZ} = Dict{Tuple{NTuple{NZ, Int}, NTuple{NZ, Int}}, Tuple{Int, Int}}
 const CG3block{NZ, CT} = Dict{NTuple{3, NTuple{NZ, Int}}, Array{CT, 4}}
 
-# S : symmetry type
-# RT : numeric type used in lowering operator and norm2s of representations
-# CT : numeric type used in cg coefficients
-# Just save the trivial and defining irreducible representations,
-# and possible alternating product representations of defining rep.
-function get_fundamental_ireps(::Type{S}, ::Type{RT}; 
+"""
+    initialize_symmetry(S, RT; verbose=VERBOSE[]) -> Irep
+
+Validate the non-Abelian symmetry `S`, construct its trivial representation
+with coefficient type `RT`, and save it through the SQLite/cache layer.
+Return the trivial irrep without constructing any fundamental representations.
+Throw `ArgumentError` for an invalid symmetry before accessing storage.
+"""
+function initialize_symmetry(::Type{S}, ::Type{RT};
         verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number}
-	@assert isvalidsymm(S)
-    println("Start generating fundamental irreps of symmetry $(S)...")
-    # Trivial (1-dimensional) representation
+    isvalidsymm(S) || throw(ArgumentError("Invalid symmetry: $S"))
     trivirep = gettrivirep(S, RT)
-    save_irep_sqlite(trivirep)
-    
-	defirep = getdefirep(S, RT)
-    save_irep_sqlite(defirep)
-
-    # NZ = number of lowering operators
-    NZ = nzops(S)
-
-    # Get alternating product representations
-    for n=2:NZ
-        Sl_alt, Sz_alt, mw, inner_prod = def_altprod(defirep, n)
-
-        # q-label of the new representation
-        # Tuple with length NZ, all elements are zero except the nth element
-        irep_alt = get_irep_frommw(S, Sl_alt, Sz_alt, inner_prod, 
-        nothing, mw, nothing; verbose)
-        save_irep_sqlite(irep_alt)
-        if onemore_fundamental_irep(S, n)
-            # SO(2N) case when n == NZ
-            mw = mw .- Tuple(i==1 ? 4 : 0 for i=1:NZ)
-            irep_alt2 = get_irep_frommw(S, Sl_alt, Sz_alt, inner_prod, 
-            nothing, mw, nothing; verbose)
-            save_irep_sqlite(irep_alt2)
-        end
-    end
+    save_irep_sqlite(trivirep; verbose)
+    return trivirep
 end
-
-onemore_fundamental_irep(::Type{S}, n::Int) where S<:NonabelianSymm = false
-onemore_fundamental_irep(::Type{SO{N}}, n::Int) where N = 
-(N % 2 == 0 && n == div(N, 2))
 
 """
     generate_every_CGT(S, RT, CT, qlabels_in, qlabels_out; save=true)
@@ -735,9 +709,9 @@ end
 
 Return whether `qlabel` is treated as a fundamental building block.
 
-Most symmetries use unit Dynkin-label qlabels. SO(N) additionally treats the
-spinor/vector doubled labels used by the package's SO convention as fundamental
-for recursive irrep construction.
+Use unit Dynkin labels for Part 3a families. The legacy odd-orthogonal
+bootstrap additionally recognizes its vector-derived doubled-spin label.
+The trivial label is also a bootstrap seed.
 """
 function is_fundamental(::Type{S}, 
     qlabel::NTuple{NZ, Int}) where {S<:NonabelianSymm, NZ}
@@ -746,7 +720,6 @@ function is_fundamental(::Type{S},
     if isSON(S) && sum(qlabel) == 2
         N = defirepdim(S)
         if N % 2 == 1 && qlabel[end] == 2 return true end
-        if N % 2 == 0 && (qlabel[end-1] == 2 || qlabel[end] == 2) return true end
     end
     return false
 end
@@ -768,7 +741,7 @@ function split_qlabel(::Type{S},
     # For example, (a, b, 0, 0) -> (a, b-1, 0, 0) and (0, 1, 0, 0)
     lastidx = findlast(!iszero, qlabel)
     smallq = [0 for _=1:NZ]
-    if isSON(S)
+    if isSON(S) && !_has_minuscule_recipes(S)
         N = defirepdim(S)
         if N % 2 == 1 && lastidx == NZ
             @assert qlabel[NZ] % 2 == 0; smallq[NZ] = 2
@@ -808,12 +781,25 @@ function getNsave_irep(::Type{S},
     qlabel::NTuple{NZ, Int}; 
     verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number, NZ}
 
+    @assert NZ == nzops(S) && all(>=(0), qlabel)
+    isvalidsymm(S) || throw(ArgumentError("Invalid symmetry: $S"))
+    if !all(iszero, qlabel) && !_has_minuscule_recipes(S)
+        throw(ArgumentError("No fundamental irrep backend for $S; B/G2 require the deferred virtual-crystal backend"))
+    end
     # If it exists, load the representation and return
     irep = load_irep_sqlite(S, RT, qlabel; verbose) 
     if !isnothing(irep) @assert isa(irep, Irep); return irep end
-    if is_fundamental(S, qlabel)
-        get_fundamental_ireps(S, RT; verbose=verbose)
-        return load_irep_sqlite(S, RT, qlabel; verbose)
+    all(iszero, qlabel) && return initialize_symmetry(S, RT; verbose)
+    trivial_label = ntuple(_ -> 0, NZ)
+    if isnothing(load_irep_sqlite(S, RT, trivial_label; verbose))
+        initialize_symmetry(S, RT; verbose)
+    end
+    if _has_minuscule_recipes(S)
+        if sum(qlabel) == 1
+            rep = construct_fundamental(S, RT, findfirst(==(1), qlabel); verbose)
+            save_irep_sqlite(rep; verbose)
+            return rep
+        end
     end
 
     # If not, build the representation from smaller ones
@@ -831,21 +817,21 @@ function getNsave_irep(::Type{S},
     return irep_new
 end
 
-# Get the largest irreducible representation from 
-# This function is called when 1) getting the alternating product representation,
-# or 2) getting the largest irreducible representation from the product representation
-# In former case, inner_prod1 is just a dictionary of matrices,
-# and inner_prod2, weight_info are 'nothing'.
-# In latter case, inner_prod1 and inner_prod2 are inner product matrices of 
-# the original irreps, and weight_info is a dictionary of information
-function get_irep_frommw(::Type{S}, 
+"""
+    _irep_component(S, Sl, Sz, metric1, metric2, mw, weight_info; mwstate, verbose)
+
+Build one embedded component by the fixed Demazure traversal. Return its
+normalized irrep and ambient weight-basis columns. All divisions destined for
+integer storage are checked; only inverse metrics may be rational.
+"""
+function _irep_component(::Type{S},
         Sl::NTuple{NL, Dict{NTuple{NZ, Int}, SparseMatrixCSC{RT}}},
         Sz::Dict{NTuple{NZ, Int}, Tuple{Int, Int}},
-        inner_prod1,
-        inner_prod2,
+        inner_prod1::Dict{NTuple{NZ,Int},Matrix{RT}},
+        inner_prod2::Dict{NTuple{NZ,Int},Matrix{RT}},
         mw::Union{NTuple{NZ, Int}, Nothing},
-        weight_info::Union{Nothing, Dict{NTuple{NZ, Int}, WeightInfo{NZ}}};
-        verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number, NL, NZ}
+        weight_info::Dict{NTuple{NZ, Int}, WeightInfo{NZ}};
+        mwstate=nothing, verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number, NL, NZ}
 
     # ordered (from highest to lowest) z-values of the original representation
     zvals_ordered = sorted_zvals(Sz)
@@ -858,13 +844,12 @@ function get_irep_frommw(::Type{S},
     # Keys are just the weights 
     weight_basis_dict = Dict{NTuple{NZ, Int}, Matrix{RT}}()
     # Put maximal weight state in the dictionary
-    weight_basis_dict[Tuple(mw)] = reshape(RT[1], (1, 1))
+    mwstate = isnothing(mwstate) ? RT[1] : mwstate
+    weight_basis_dict[Tuple(mw)] = reshape(copy(mwstate), :, 1)
     # The dimension of weight spaces
     weight_cnt = Dict{NTuple{NZ, Int}, Int}()
     verticesNvecs = Dict{CrystalVertex{S}, Vector{RT}}()
 
-    # Assume that the maximal weight has inner multiplicity 1
-    mwstate = RT[1]
     mw_vertex = mw_crystal_qlabel(S, qlabel)
     @assert get_weight(mw_vertex) == mw
     verticesNvecs[mw_vertex] = mwstate
@@ -879,6 +864,7 @@ function get_irep_frommw(::Type{S},
         for k in 1:nsource
             vertex = vertices_queue[k]
             new_vertex, new_vec = vertex, verticesNvecs[vertex]
+            div_fac = 1
             while true
                 ow = get_weight(new_vertex)
                 new_vertex = apply_lowering(new_vertex, cops, i)
@@ -886,12 +872,12 @@ function get_irep_frommw(::Type{S},
                 # Demazure string intersections are empty, highest-only, or full.
                 haskey(verticesNvecs, new_vertex) && break
 
-                new_vec = Sl[i][ow] * new_vec
-                _, new_vec = divcfac(new_vec)
+                new_vec = _exact_divide.(Sl[i][ow] * new_vec, div_fac)
                 nw = get_weight(new_vertex)
                 weight_cnt[nw] = get(weight_cnt, nw, 0) + 1
                 push!(vertices_queue, new_vertex)
                 verticesNvecs[new_vertex] = new_vec
+                div_fac += 1
             end
         end
     end
@@ -973,15 +959,25 @@ function get_irep_frommw(::Type{S},
         end
     end
 
+    highest_norm = only(ninnerprod[mw])
+    for block in values(ninnerprod)
+        block .= _exact_divide.(block, highest_norm)
+    end
     inv_innerprod = get_inv_innerprod(S, ninnerprod)
     
     # Return the new irep, which is the largest irreducible representation
     # constructed from the product representation
     # of the original representation and the trivial representation
     dim = dim_from_innerprod(ninnerprod)
-    return Irep(S, RT, nSl, nSz, ninnerprod, inv_innerprod, dim) 
+    return Irep(S, RT, nSl, nSz, ninnerprod, inv_innerprod, dim), weight_basis_dict
 end
 
+"""
+    get_inv_innerprod(S, metrics; verbose=VERBOSE[]) -> Dict
+
+Invert dominant-weight Gram blocks exactly. Store each inverse as an integer
+matrix with relatively prime entries times a reduced rational scalar.
+"""
 function get_inv_innerprod(::Type{S},
     ninnerprod::Dict{NTuple{NZ, Int}, Matrix{RT}}; 
     verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number, NZ}
@@ -996,7 +992,9 @@ function get_inv_innerprod(::Type{S},
 
             fac = lcm(Matrix{BigInt}((denominator.(Minv))))
             B = Matrix{RT}(map_entries(x->Nemo.ZZ(x*fac), Minv))
-            inv_innerprod[zval] = (B, 1 // fac)
+            common = gcd(B)
+            B = div.(B, common)
+            inv_innerprod[zval] = (B, common // fac)
         end
     end
 
@@ -1245,11 +1243,11 @@ function get_innerprodmat(::Type{S}, ::Type{RT},
         zval::NTuple{NZ, Int},
         weight_basis::Matrix{RT}, 
         wdim::Int, 
-        inner_prod1, 
-        inner_prod2, 
-        weight_info; verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number, NZ}
+        inner_prod1::Dict{NTuple{NZ,Int},Matrix{RT}},
+        inner_prod2::Dict{NTuple{NZ,Int},Matrix{RT}},
+        weight_info::Dict{NTuple{NZ,Int},WeightInfo{NZ}}; verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number, NZ}
     inprod_matrix = zeros(RT, wdim, wdim)
-    winfo = isnothing(weight_info) ? nothing : weight_info[zval]
+    winfo = weight_info[zval]
     for i=1:wdim
         for j=i:wdim
             inprod_matrix[i, j] = inprod(weight_basis[:, i], weight_basis[:, j], 
@@ -1259,15 +1257,6 @@ function get_innerprodmat(::Type{S}, ::Type{RT},
     end
     return inprod_matrix
 end
-
-inprod(v1::Vector{RT}, 
-    v2::Vector{RT}, 
-    basis_innerprod::Dict{NTuple{NZ, Int}, Matrix{RT}},
-    ::Nothing,
-    ::Nothing, 
-    zval::NTuple{NZ, Int};
-    verbose=VERBOSE[]) where {RT<:Number, NZ} =
-dot(v1, basis_innerprod[zval] * v2)
 
 function inprod(V1::Vector, 
     V2::Vector, 
