@@ -27,7 +27,7 @@ include("Base.jl")
 
 # The exported API is the symmetry interface consumed directly by Telum.
 # Cache/storage and CGT-construction internals remain accessible as `LurCGT.name`.
-export Z, U1, SU, SO, Sp, G2
+export Z, U1, SU, SO, Sp, G2, F4, E6, E7, E8
 export Symmetry, AbelianSymm, NonabelianSymm
 
 export add_qn, decompose_irop, decompose_space, dimension

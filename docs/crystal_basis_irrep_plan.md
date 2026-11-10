@@ -127,7 +127,7 @@ Preserve the currently supported SO label subset and its vector-derived bootstra
 modules; do not require true spin fundamentals to replace their tableau storage.
 Use existing symmetry functions and concrete tuples/arrays; no registry type is
 needed. Spin and E/F extensions belong to the later
-[seed catalogue](crystal_basis_integration_plan.md#complete-fundamental-construction-catalogue).
+[seed catalogue](crystal_basis_minuscule_plan.md#complete-fundamental-construction-catalogue).
 
 ## Highest-weight recipes for A–D and G2
 

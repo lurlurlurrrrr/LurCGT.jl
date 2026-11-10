@@ -123,6 +123,41 @@ end
     end
 end
 
+@testset "longest Weyl words" begin
+    for (S, r, count_roots) in ((SU{5}, 4, 10), (Sp{8}, 4, 16),
+                               (SO{9}, 4, 16), (SO{8}, 4, 12),
+                               (SO{6}, 3, 6), (SO{4}, 2, 2), (G2, 2, 6))
+        word = LurCGT.crystal_lowering_word(S)
+        @test length(word) == count_roots
+        @test all(i -> 1 <= i <= r, word)
+        # Reflect simple roots in their Euclidean realization; w0 makes them negative.
+        if S != G2
+            n = S == SU{5} ? r + 1 : r
+            roots = [zeros(Int, n) for _ in 1:r]
+            for i in 1:r-1
+                roots[i][i] = 1
+                roots[i][i+1] = -1
+            end
+            roots[r][r] = 1
+            if S == SU{5}
+                roots[r][r+1] = -1
+            elseif S in (SO{4}, SO{6}, SO{8})
+                roots[r][r-1] = 1
+            elseif S == Sp{8}
+                roots[r][r] = 2
+            end
+            for root in roots
+                v = copy(root)
+                for i in word
+                    a = roots[i]
+                    v -= div(2dot(v, a), dot(a, a)) * a
+                end
+                @test first(filter(!iszero, v)) < 0
+            end
+        end
+    end
+end
+
 @testset "crystal component strings and published words" begin
     for (S, q, dim) in (
         (SU{3}, (1, 1), 8), (SU{3}, (2, 1), 15),
@@ -173,6 +208,22 @@ end
             @test seen[LurCGT.CrystalVertex{S}(copy(vertex.word))] == seen[vertex]
         end
         @test length(vertices) == dim
+        staged = [highest]
+        staged_seen = Set(staged)
+        for i in LurCGT.crystal_lowering_word(S)
+            nsource = length(staged)
+            for k in 1:nsource
+                current = staged[k]
+                while true
+                    current = LurCGT.apply_lowering(current, cops, i)
+                    current === nothing && break
+                    current in staged_seen && break
+                    push!(staged_seen, current)
+                    push!(staged, current)
+                end
+            end
+        end
+        @test staged_seen == Set(vertices)
         if S == SU{3} && q == (1, 1)
             @test count(v -> LurCGT.get_weight(v) == (0, 0), vertices) == 2
         end

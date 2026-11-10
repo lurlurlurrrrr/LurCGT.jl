@@ -873,36 +873,32 @@ function get_irep_frommw(::Type{S},
     cops = get_crystal_ops(S)
     vertices_queue = [mw_vertex]
 
-    while !isempty(vertices_queue)
-        new_queue = CrystalVertex{S}[]
-        for vertex in vertices_queue
-            for i in 1:NZ
-                if det_getvector(vertex, i, cops, verticesNvecs)
-                    new_vertex, new_vec = vertex, verticesNvecs[vertex]
-                    while true
-                        ow = get_weight(new_vertex)
-                        new_vertex = apply_lowering(new_vertex, cops, i)
-                        if isnothing(new_vertex) break end
+    for i in crystal_lowering_word(S)
+        # A Demazure stage closes strings from the entire preceding subset.
+        nsource = length(vertices_queue)
+        for k in 1:nsource
+            vertex = vertices_queue[k]
+            new_vertex, new_vec = vertex, verticesNvecs[vertex]
+            while true
+                ow = get_weight(new_vertex)
+                new_vertex = apply_lowering(new_vertex, cops, i)
+                isnothing(new_vertex) && break
+                # Demazure string intersections are empty, highest-only, or full.
+                haskey(verticesNvecs, new_vertex) && break
 
-                        new_vec = Sl[i][ow] * new_vec
-                        _, new_vec = divcfac(new_vec)
-                        if haskey(verticesNvecs, new_vertex) continue end
-
-                        nw = get_weight(new_vertex)
-                        if !haskey(weight_cnt, nw) weight_cnt[nw] = 0 end
-                        weight_cnt[nw] += 1
-
-                        push!(new_queue, new_vertex)
-                        verticesNvecs[new_vertex] = new_vec
-                    end
-                end
+                new_vec = Sl[i][ow] * new_vec
+                _, new_vec = divcfac(new_vec)
+                nw = get_weight(new_vertex)
+                weight_cnt[nw] = get(weight_cnt, nw, 0) + 1
+                push!(vertices_queue, new_vertex)
+                verticesNvecs[new_vertex] = new_vec
             end
         end
-        vertices_queue = new_queue
     end
 
     nsaved_vecs = Dict{NTuple{NZ, Int}, Int}()
-    for (vertex, vec) in verticesNvecs
+    for vertex in vertices_queue
+        vec = verticesNvecs[vertex]
         w = get_weight(vertex); len = length(vec)
         if !haskey(weight_basis_dict, w)
             weight_basis_dict[w] = zeros(RT, len, weight_cnt[w])

@@ -19,7 +19,7 @@ using FileWatching: mkpidlock
 
 # Word order can change representation bases and every dependent CG/recoupling
 # object. Version the entire SQLite file and memory namespace together.
-const CRYSTAL_BASIS_VERSION = "word-v1"
+const CRYSTAL_BASIS_VERSION = "demazure-v1"
 
 const SQLITE_DBS = Dict{String, SQLite.DB}()
 const SQLITE_DB_LOCK = ReentrantLock()
@@ -111,7 +111,7 @@ Return the directory used for process-local SQLite databases in the active run
 mode.
 
 Local databases are stored as one database per symmetry and process id, for
-example `joinpath(sqlite_local_dir(), "SU2", "\$(process_local_id())_word-v1.db")`.
+example `joinpath(sqlite_local_dir(), "SU2", "\$(process_local_id())_demazure-v1.db")`.
 Set `LURCGT_LOCALDB_DIR` to choose the source/local directory, and
 `LURCGT_LOCALDB_DIR_NODE` to choose the active node-local directory in
 `LURCGT_RUN_MODE=server`.
@@ -126,7 +126,7 @@ Return the directory used for shared global SQLite databases in the active run
 mode.
 
 Global databases are stored as one database per symmetry, for example
-`joinpath(sqlite_global_dir(), "SU2_word-v1.db")`.  Set `LURCGT_GLOBALDB_DIR` to choose
+`joinpath(sqlite_global_dir(), "SU2_demazure-v1.db")`.  Set `LURCGT_GLOBALDB_DIR` to choose
 the source/global directory, and `LURCGT_GLOBALDB_DIR_NODE` to choose the active
 node-local directory in `LURCGT_RUN_MODE=server`.
 """

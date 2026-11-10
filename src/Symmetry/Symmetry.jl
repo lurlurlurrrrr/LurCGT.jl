@@ -17,6 +17,14 @@ abstract type Sp{N} <: NonabelianSymm end
 abstract type SO{N} <: NonabelianSymm end
 """`G2` is the exceptional rank-two non-Abelian symmetry family with two-component Dynkin q-labels."""
 abstract type G2 <: NonabelianSymm end
+"""`F4` is the exceptional rank-four non-Abelian symmetry family."""
+abstract type F4 <: NonabelianSymm end
+"""`E6` is the exceptional rank-six non-Abelian symmetry family."""
+abstract type E6 <: NonabelianSymm end
+"""`E7` is the exceptional rank-seven non-Abelian symmetry family."""
+abstract type E7 <: NonabelianSymm end
+"""`E8` is the exceptional rank-eight non-Abelian symmetry family."""
+abstract type E8 <: NonabelianSymm end
 
 """
     totxt(::Type{S}) -> String where {S<:Symmetry}
@@ -37,12 +45,20 @@ Base.hash(::Type{SU{N}}, h::UInt) where N = hash((2, N), h)
 Base.hash(::Type{Sp{N}}, h::UInt) where N = hash((3, N), h)
 Base.hash(::Type{SO{N}}, h::UInt) where N = hash((4, N), h)
 Base.hash(::Type{G2}, h::UInt) = hash((5,), h)
+Base.hash(::Type{F4}, h::UInt) = hash((6,), h)
+Base.hash(::Type{E6}, h::UInt) = hash((7,), h)
+Base.hash(::Type{E7}, h::UInt) = hash((8,), h)
+Base.hash(::Type{E8}, h::UInt) = hash((9,), h)
 
 include("abelian.jl")
 include("SU.jl")
 include("Sp.jl")
 include("SO.jl")
 include("G2.jl")
+include("F4.jl")
+include("E6.jl")
+include("E7.jl")
+include("E8.jl")
 
 """
     isabelian(S) -> Bool

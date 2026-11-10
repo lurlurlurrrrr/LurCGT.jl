@@ -300,3 +300,82 @@ Compare tensor words by contents within the same symmetry. Different weights or
 embeddings are not identified by this operation; it does not mutate either word.
 """
 Base.:(==)(a::CrystalVertex{S}, b::CrystalVertex{S}) where S<:NonabelianSymm = a.word == b.word
+
+"""
+    crystal_lowering_word(S) -> Vector{Int}
+
+Return a reduced word for the longest Weyl element in chronological lowering
+order, using the local simple-root numbering. The returned vector is owned.
+Type A uses triangular strings; B/C use a Coxeter element to the rank power;
+D uses successive signed-coordinate elimination strings; G2 is alternating.
+These fixed choices determine the first-discovery numerical basis.
+"""
+function crystal_lowering_word(::Type{SU{N}}) where N
+    word = Int[]
+    for last in 1:N-1
+        append!(word, last:-1:1)
+    end
+    return word
+end
+
+"""`crystal_lowering_word(Sp{N})` returns the owned type-C chronological word."""
+crystal_lowering_word(::Type{Sp{N}}) where N = repeat(collect(1:div(N, 2)), div(N, 2))
+
+"""`crystal_lowering_word(SO{N})` returns the owned type-B or type-D chronological word."""
+function crystal_lowering_word(::Type{SO{N}}) where N
+    r = div(N, 2)
+    isodd(N) && return repeat(collect(1:r), r)
+    word = Int[]
+    for k in 1:r-1
+        append!(word, k:r-2)
+        push!(word, r-1, r)
+        append!(word, r-2:-1:k)
+    end
+    return word
+end
+
+"""`crystal_lowering_word(G2)` returns the owned six-color chronological word."""
+crystal_lowering_word(::Type{G2}) = [1, 2, 1, 2, 1, 2]
+
+"""Return the fixed chronological reduced word for the longest element of `F4`."""
+crystal_lowering_word(::Type{F4}) = repeat([1, 2, 3, 4], 6)
+"""Return the fixed chronological reduced word for the longest element of `E7`."""
+crystal_lowering_word(::Type{E7}) = repeat([1, 3, 4, 2, 5, 6, 7], 9)
+"""Return the fixed chronological reduced word for the longest element of `E8`."""
+crystal_lowering_word(::Type{E8}) = repeat([1, 3, 4, 2, 5, 6, 7, 8], 15)
+"""
+    crystal_lowering_word(E6) -> Vector{Int}
+
+Construct a deterministic chronological reduced word for the E6 longest Weyl
+element from its Cartan matrix, choosing the smallest length-increasing node.
+"""
+function crystal_lowering_word(::Type{E6})
+    cartan = [2 -1 0 0 0 0;
+              -1 2 -1 0 0 0;
+              0 -1 2 -1 0 0;
+              0 0 -1 2 -1 0;
+              0 0 0 -1 2 -1;
+              0 0 0 0 -1 2]
+    # E6 diagram branches at node 4; node 2 attaches there.
+    cartan[2, 3] = cartan[3, 2] = 0
+    cartan[2, 4] = cartan[4, 2] = -1
+    images = Matrix{Int}(I, 6, 6)
+    word = Int[]
+    while true
+        chosen = 0
+        for i in 1:6
+            image = view(images, :, i)
+            all(>=(0), image) || continue
+            chosen = i
+            break
+        end
+        iszero(chosen) && break
+        # Right-multiply the represented Weyl element by the chosen reflection.
+        for j in 1:6
+            images[:, j] -= cartan[chosen, j] .* images[:, chosen]
+        end
+        push!(word, chosen)
+    end
+    length(word) == 36 || error("Failed to construct an E6 longest-element word")
+    return reverse!(word)
+end
