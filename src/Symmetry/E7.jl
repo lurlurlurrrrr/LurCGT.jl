@@ -4,15 +4,6 @@ totxt(::Type{E7}) = "E7"
 nlops(::Type{E7}) = 7
 nzops(::Type{E7}) = 7
 
-"""`fundamental_sequence(E7)` returns the fixed seed/product dependency order."""
-fundamental_sequence(::Type{E7}) = [7, 1, 6, 2, 5, 3, 4]
-
-"""`minuscule_nodes(E7)` contains the 56-dimensional seed."""
-minuscule_nodes(::Type{E7}) = [7]
-
-"""`fundamental_sources(E7, k)` gives the fixed E7 product recipe."""
-fundamental_sources(::Type{E7}, k::Int) = ((7,7), (1,7), (1,1), (5,7), (6,7), (7,7), (0,0))[k]
-
 """`_exceptional_weight_rows(E7)` returns the fixed reversed scaled-root conversion."""
 _exceptional_weight_rows(::Type{E7}) = ((2,3,4,6,5,4,3,),(4,6,8,12,10,8,4,),(6,9,12,18,15,10,5,),(8,12,16,24,18,12,6,),(6,8,12,16,12,8,4,),(4,7,8,12,9,6,3,),(4,4,6,8,6,4,2,),)
 
@@ -72,13 +63,31 @@ getsz_triv(::Type{S}) where {S<:E7} = Dict(ntuple(_ -> 0,nzops(S)) => (1,1))
 """`less_weight(S, a, b)` compares E7 weights in reversed lexicographic order."""
 less_weight(::Type{S}, a::Tuple, b::Tuple) where {S<:E7} = rev_less(a,b)
 
-"""`fundamental_qlabels(E7)` returns unit labels in fixed construction order."""
-fundamental_qlabels(::Type{S}) where {S<:E7} = [_unit_label(S,k) for k in fundamental_sequence(S)]
+"""`fundamental_qlabels(E7)` preserves historical label enumeration without scheduling construction."""
+function fundamental_qlabels(::Type{S}) where {S<:E7}
+    recipes = fundamental_recipes(S)
+    return [_recipe_label(S,recipes[k].target) for k in (7,1,6,2,5,3,4)]
+end
 
-"""`_has_minuscule_recipes(E7)` reports whether Part 3a recipes are available."""
-_has_minuscule_recipes(::Type{E7}) = true
+"""`irrep_validation_rules(E7)` returns fixed ordered target/source checks, including family-specific cases."""
+function irrep_validation_rules(::Type{S}) where {S<:E7}
+    return _irrep_validation_rules(S,_unit_label(S,1))
+end
 
-"""`fundamental_validation_rules(E7)` returns fixed ordered target/source checks, including family-specific cases."""
-function fundamental_validation_rules(::Type{S}) where {S<:E7}
-    return _fundamental_validation_rules(S,_unit_label(S,1))
+"""
+    fundamental_recipes(E7) -> Vector{FundamentalRecipe}
+
+Return owned metadata indexed by fundamental node. Dependencies are recursive;
+no numerical representations or crystal vertices are constructed here.
+"""
+function fundamental_recipes(::Type{S}) where {S<:E7}
+    return FundamentalRecipe[
+        ProductRecipe(collect(_unit_label(S,1)), (collect(_unit_label(S,7)),collect(_unit_label(S,7))),1,133),
+        ProductRecipe(collect(_unit_label(S,2)), (collect(_unit_label(S,1)),collect(_unit_label(S,7))),1,912),
+        ProductRecipe(collect(_unit_label(S,3)), (collect(_unit_label(S,1)),collect(_unit_label(S,1))),1,8645),
+        ProductRecipe(collect(_unit_label(S,4)), (collect(_unit_label(S,5)),collect(_unit_label(S,7))),1,365750),
+        ProductRecipe(collect(_unit_label(S,5)), (collect(_unit_label(S,6)),collect(_unit_label(S,7))),1,27664),
+        ProductRecipe(collect(_unit_label(S,6)), (collect(_unit_label(S,7)),collect(_unit_label(S,7))),1,1539),
+        MinusculeRecipe(collect(_unit_label(S,7)),56)
+    ]
 end

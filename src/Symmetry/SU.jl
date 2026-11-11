@@ -222,28 +222,9 @@ Return the qlabels of the fundamental SU(N) representations.
 Each qlabel is a unit vector in Dynkin-label coordinates. These are used as
 building blocks by tensor-product and irrep-generation routines.
 """
-function fundamental_qlabels(::Type{SU{N}}) where N
-	funda_lst = Vector{NTuple{N-1, Int}}()
-	for i in 1:N-1
-		q = Tuple(i == j ? 1 : 0 for j=1:N-1)
-		push!(funda_lst, q)
-	end
-	return funda_lst
+function fundamental_qlabels(::Type{S}) where {S<:SU}
+    return [_recipe_label(S,recipe.target) for recipe in fundamental_recipes(S)]
 end
-
-"""
-    fundamental_sequence(S) -> Vector{Int}
-
-Return the fixed dependency order for on-demand fundamental recipes. Seeds
-precede every product that uses them; callers need not construct unused nodes.
-"""
-fundamental_sequence(::Type{SU{N}}) where N = collect(1:N-1)
-
-"""`minuscule_nodes(S)` returns the ordered minuscule fundamental nodes."""
-minuscule_nodes(::Type{SU{N}}) where N = collect(1:N-1)
-
-"""`_has_minuscule_recipes(SU)` reports whether Part 3a recipes are available."""
-_has_minuscule_recipes(::Type{SU{N}}) where N = true
 
 """`_minuscule_symbol_start(SU)` reserves the existing vector alphabet."""
 _minuscule_symbol_start(::Type{SU{N}}) where N = nzops(SU{N})+2
@@ -251,10 +232,21 @@ _minuscule_symbol_start(::Type{SU{N}}) where N = nzops(SU{N})+2
 """`_preserve_vector_symbols(SU, k)` keeps vector-seed symbol assignments compatible."""
 _preserve_vector_symbols(::Type{SU{N}}, k::Int) where N = k == 1
 
-"""`fundamental_validation_rules(SU)` returns fixed ordered target/source checks, including family-specific cases."""
-function fundamental_validation_rules(::Type{S}) where {S<:SU}
+"""`irrep_validation_rules(SU)` returns fixed ordered target/source checks, including family-specific cases."""
+function irrep_validation_rules(::Type{S}) where {S<:SU}
     adjoint = _unit_label(S,1) .+ _unit_label(S,nzops(S))
-    rules = _fundamental_validation_rules(S,adjoint)
-    nzops(S) <= 2 && push!(rules,(adjoint,adjoint,adjoint))
+    rules = _irrep_validation_rules(S,adjoint)
+    nzops(S) <= 2 && push!(rules,IrrepValidationRule(collect(adjoint),(collect(adjoint),collect(adjoint))))
     return rules
+end
+
+"""
+    fundamental_recipes(SU) -> Vector{FundamentalRecipe}
+
+Return owned metadata indexed by fundamental node. Dependencies are recursive;
+no numerical representations or crystal vertices are constructed here.
+"""
+function fundamental_recipes(::Type{S}) where {N,S<:SU{N}}
+    return FundamentalRecipe[MinusculeRecipe(collect(_unit_label(S,k)),
+        Int(binomial(big(N),k))) for k in 1:N-1]
 end

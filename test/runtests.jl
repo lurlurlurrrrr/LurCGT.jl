@@ -84,6 +84,7 @@ end
 
 @testset "deferred virtual-crystal irrep backends" begin
     for (S,q) in ((SO{5},(1,0)),(SO{7},(0,0,1)),(G2,(1,0)))
+        @test isempty(LurCGT.fundamental_recipes(S))
         @test_throws ArgumentError LurCGT.getNsave_irep(S,BigInt,q)
     end
 end
@@ -141,17 +142,58 @@ end
     end
 end
 
+@testset "fundamental recipe metadata and recursive requests" begin
+    for S in (SU{3},Sp{6},SO{4},SO{6},SO{8},E6,E7)
+        recipes = LurCGT.fundamental_recipes(S)
+        @test recipes isa Vector{LurCGT.FundamentalRecipe}
+        @test LurCGT.validate_recipe_catalogue(S,recipes) === nothing
+        @test LurCGT.irrep_validation_rules(S) isa Vector{LurCGT.IrrepValidationRule}
+    end
+    bad = LurCGT.fundamental_recipes(SO{8})
+    bad[2] = LurCGT.ProductRecipe([0,1,0,0],([1,0,0,0],[1,0,0,0]),0,28)
+    @test_throws ArgumentError LurCGT.validate_recipe_catalogue(SO{8},bad)
+    bad[2] = LurCGT.ProductRecipe([0,1,0,0],([1,0,0],[1,0,0,0]),1,28)
+    @test_throws ArgumentError LurCGT.validate_recipe_catalogue(SO{8},bad)
+    bad[2] = LurCGT.ProductRecipe([0,1,0,0],([-1,0,0,0],[1,0,0,0]),1,28)
+    @test_throws ArgumentError LurCGT.validate_recipe_catalogue(SO{8},bad)
+    @test_throws ArgumentError LurCGT.construct_recipe(SU{3},BigInt,LurCGT.AdjointRecipe([1,0],3))
+    mktempdir() do tmp
+        withenv("LURCGT_LOCALDB_DIR"=>joinpath(tmp,"local"),
+                "LURCGT_GLOBALDB_DIR"=>joinpath(tmp,"global")) do
+            LurCGT.close_all_sqlite_dbs()
+            lock(LurCGT.IREP_CACHE_LOCK) do
+                empty!(LurCGT.IREP_CACHE)
+            end
+            try
+                @test dimension(LurCGT.getNsave_irep(SO{8},BigInt,(0,1,0,0))) == 28
+                @test dimension(LurCGT.load_irep_sqlite(SO{8},BigInt,(1,0,0,0))) == 8
+                @test isnothing(LurCGT.load_irep_sqlite(SO{8},BigInt,(0,0,1,0)))
+                @test isnothing(LurCGT.load_irep_sqlite(SO{8},BigInt,(0,0,0,1)))
+            finally
+                LurCGT.close_all_sqlite_dbs()
+                lock(LurCGT.IREP_CACHE_LOCK) do
+                    empty!(LurCGT.IREP_CACHE)
+                end
+            end
+        end
+    end
+end
+
 @testset "canonical nonfundamental copies after fundamental bootstrap" begin
     for S in (Sp{4},Sp{6},SO{8})
         @test LurCGT.validate_fundamental_ireps(S) > 0
     end
     @test dimension(LurCGT.getNsave_irep(E6,BigInt,(0,1,0,0,0,0))) == 78
     @test dimension(LurCGT.getNsave_irep(E7,BigInt,(1,0,0,0,0,0,0))) == 133
-    rules = LurCGT.fundamental_validation_rules(SO{8})
+    rules = LurCGT.irrep_validation_rules(SO{8})
     @test LurCGT.validate_fundamental_products(SO{8}; rules) == length(rules)
     rep = LurCGT.getNsave_irep(SU{3},BigInt,(1,1))
     Sl,Sz,_,wi = LurCGT.tensor_prod_reps(rep,rep)
     mw = LurCGT.qlab2mwz(SU{3},(1,1))
+    repeated = LurCGT.IrrepValidationRule([1,1],([1,1],[1,1]))
+    @test LurCGT.validate_fundamental_products(SU{3};rules=[repeated]) == 2
+    absent = LurCGT.IrrepValidationRule([1,0],([1,0],[1,0]))
+    @test_throws ArgumentError LurCGT.validate_fundamental_products(SU{3};rules=[absent])
     for copy_index in 1:2
         other = LurCGT.get_irep_frommw(SU{3},Sl,Sz,rep.innerprod,rep.innerprod,mw,wi;copy_index)
         @test LurCGT.same_irep_fields(rep,other)

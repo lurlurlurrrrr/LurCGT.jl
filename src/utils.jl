@@ -1,3 +1,10 @@
+"""`_exact_divide(x, d)` divides integer storage values, rejecting nonzero remainder."""
+function _exact_divide(x::Integer, d::Integer)
+    q,r = divrem(x,d)
+    iszero(r) || error("Nonintegral representation coefficient: $x / $d")
+    return q
+end
+
 """
     combination_index(m, n, target) -> Int
 

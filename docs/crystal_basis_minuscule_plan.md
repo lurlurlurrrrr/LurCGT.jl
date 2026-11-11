@@ -3,10 +3,8 @@
 Status: implementation and validation specification. See the [part 3 overview](crystal_basis_integration_plan.md)
 for dependencies and shared requirements.
 
-Part 3a remains incomplete pending the
-[recipe-struct cleanup](crystal_basis_recipe_structs_plan.md). That plan
-supersedes the function-only recipe representation below with concrete
-per-symmetry construction and validation catalogues.
+The [recipe-struct cleanup](crystal_basis_recipe_structs_plan.md) is implemented:
+per-symmetry construction and validation catalogues drive recursive requests.
 
 ## Scope
 
@@ -160,10 +158,10 @@ three minuscule fundamentals; for D2 use the two A1 factors. Record the explicit
 node permutation in each adapter and verify it against `getdz`. SO(2) remains
 on its Abelian path.
 
-### Hard-coded recipes and dependency order
+### Hard-coded recipes and recursive dependencies
 
-Implement per-family/per-node methods using ordinary functions and concrete
-labels/tuples. Each recipe specifies:
+Each symmetry provides a `Vector{FundamentalRecipe}` indexed by fundamental
+node. Concrete minuscule, adjoint, and product recipe subtypes specify:
 
 - target fundamental q-label and expected dimension;
 - seed kind, or two ordered source labels for component extraction;
@@ -178,7 +176,7 @@ Start work on a new symmetry with `initialize_symmetry(S, RT; verbose)`: call
 `isvalidsymm`, reject invalid symmetries before storage access, and save only
 the trivial irrep. This initializer does not enumerate fundamentals.
 
-Remove `get_fundamental_ireps` when recipe dispatch is integrated. On a
+The bulk `get_fundamental_ireps` entry point is removed. On a
 `getNsave_irep` cache miss, execute only the requested fundamental's hard-coded
 recipe and its dependencies. Keep trivial initialization separate from this
 per-target construction; do not trigger bulk generation on a cache miss.
@@ -270,8 +268,8 @@ Return an `Irep`; a full CG tensor is not required for bootstrap.
 1. Implement and integrate direct minuscule seeds, including the SO(8) vector and both half-spin seeds.
 2. Generalize the selected-component builder and extract SO(8) `(0, 1, 0, 0)`
    from two defining irreps without preloading the target.
-3. Encode the in-scope classical and E6/E7 fundamental recipes in fixed dependency
-   order, including staged binary forms of the tensor powers.
+3. Encode the in-scope classical and E6/E7 fundamental recipes with acyclic
+   dependencies, including staged binary forms of the tensor powers.
 4. Replace the blanket exterior-power bootstrap with per-target recipe dispatch.
    Remove the alternating-product irrep backend after migrating its in-scope
    callers. Audit out-of-scope callers before deleting shared code. Existing
@@ -315,8 +313,8 @@ metric matrices and factors themselves, not only their represented product.
 Reduce inverse-metric matrix entries to relatively prime integers, absorbing
 the common factor into the rational scalar. Only inverse metrics may be
 rational. Existing databases are removed before validation; old entries are
-not canonical references. Hard-coded recipes also specify the fundamental
-construction sequence so all canonical dependencies are saved before checks.
+not canonical references. Hard-coded recipes define acyclic dependencies,
+resolved recursively; all required fundamentals are saved before canonical comparisons.
 Do not accept an intertwiner as a substitute for field equality. Different
 multiplicity copies have different ambient embeddings but must produce the
 same `Irep` fields.
@@ -409,16 +407,18 @@ allocation measurements. No new rank-check gate is required.
 ## Implementation entry points
 
 - `initialize_symmetry(S, RT)` validates S and saves only the trivial irrep.
-- `fundamental_sequence(S)` and `fundamental_sources(S, k)` encode dependency
-  order and ordered source nodes; `getNsave_irep` executes recipes on demand.
+- `fundamental_recipes(S)` returns recipe structs indexed by node;
+  `getNsave_irep` executes them and recursively requests ordered sources.
 - `get_minuscule_irep(S, RT, k)` constructs a seed without database access.
 - `get_irep_frommw` performs exact preceding-multiplet extraction; optional
   `copy_index` selects a repeated copy and `candidates` records incidental
-  nonfundamental results outside the canonical cache.
-- `validate_fundamental_ireps(S, RT)` saves fundamentals in sequence, then
+  nonfundamental results outside the canonical cache. Optional `copies` collects
+  all occurrences of the target.
+- `validate_fundamental_ireps(S, RT)` saves required fundamentals, then
   compares every recorded copy with its canonical result.
-- `fundamental_validation_rules(S)` lists finite cross-product rules;
-  `validate_fundamental_products(S, RT; rules=...)` executes them explicitly.
+- `irrep_validation_rules(S)` returns `Vector{IrrepValidationRule}`;
+  `validate_fundamental_products(S, RT; rules=...)` checks every target copy
+  and returns the number of copies checked.
 - `same_irep_fields(a, b)` compares every representation field except
   `size_byte`; it does not perform a change of basis.
 

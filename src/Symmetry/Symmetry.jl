@@ -50,6 +50,132 @@ Base.hash(::Type{E6}, h::UInt) = hash((7,), h)
 Base.hash(::Type{E7}, h::UInt) = hash((8,), h)
 Base.hash(::Type{E8}, h::UInt) = hash((9,), h)
 
+"""
+    FundamentalRecipe
+
+Abstract construction metadata for one fundamental irrep. Catalogues are
+`Vector{FundamentalRecipe}`; dispatch occurs once at the construction boundary.
+"""
+abstract type FundamentalRecipe end
+
+"""
+    MinusculeRecipe(target::Vector{Int}, dimension::Int)
+
+Describe a minuscule Weyl-orbit seed with its expected dimension. The owned
+label is read-only after catalogue construction; no numerical data is stored.
+"""
+struct MinusculeRecipe <: FundamentalRecipe
+    target::Vector{Int}
+    dimension::Int
+end
+
+"""
+    AdjointRecipe(target::Vector{Int}, dimension::Int)
+
+Describe a direct adjoint seed. Numerical execution remains unavailable until
+the adjoint backend is implemented. The owned target label is read-only.
+"""
+struct AdjointRecipe <: FundamentalRecipe
+    target::Vector{Int}
+    dimension::Int
+end
+
+"""
+    ProductRecipe(target, sources::NTuple{2,Vector{Int}}, copy_index, dimension)
+
+Describe the selected copy of a target in an ordered source product. Labels
+are owned read-only integer vectors; source order is never sorted. Copy indices
+are positive and refer to deterministic numerical highest-vector selection.
+"""
+struct ProductRecipe <: FundamentalRecipe
+    target::Vector{Int}
+    sources::NTuple{2,Vector{Int}}
+    copy_index::Int
+    dimension::Int
+end
+
+"""
+    IrrepValidationRule(target::Vector{Int}, sources::NTuple{2,Vector{Int}})
+
+Compare every target copy extracted from the ordered sources with the canonical
+irrep. Labels are owned read-only vectors. An absent target fails validation.
+"""
+struct IrrepValidationRule
+    target::Vector{Int}
+    sources::NTuple{2,Vector{Int}}
+end
+
+"""
+    fundamental_recipes(S) -> Vector{FundamentalRecipe}
+
+Return owned fundamental construction metadata indexed by node. An empty
+catalogue means no numerical construction backend is available for `S`.
+Symmetry-specific methods supply supported catalogues without constructing irreps.
+"""
+fundamental_recipes(::Type) = FundamentalRecipe[]
+
+"""`_unit_label(S, k)` returns the rank-length unit Dynkin label at k."""
+_unit_label(::Type{S}, k::Int) where S = ntuple(i -> Int(i == k), nzops(S))
+
+"""
+    _recipe_label(S, label::Vector{Int}) -> NTuple{nzops(S),Int}
+
+Check rank and nonnegative Dynkin entries before converting recipe metadata to
+the existing numerical API. Does not mutate the label.
+"""
+function _recipe_label(::Type{S}, label::Vector{Int}) where S
+    length(label) == nzops(S) || throw(ArgumentError("Wrong recipe label rank for $S"))
+    all(>=(0),label) || throw(ArgumentError("Negative recipe label for $S"))
+    return Tuple(label)::NTuple{nzops(S),Int}
+end
+
+"""`_validate_recipe(S, recipe)` checks the common seed metadata without construction."""
+function _validate_recipe(::Type{S}, recipe::FundamentalRecipe) where S
+    _recipe_label(S,recipe.target)
+    sum(recipe.target) == 1 || throw(ArgumentError("Recipe target must be fundamental"))
+    recipe.dimension > 0 || throw(ArgumentError("Recipe dimension must be positive"))
+    return nothing
+end
+
+"""`_validate_recipe(S, recipe::ProductRecipe)` additionally checks ordered sources and copy index."""
+function _validate_recipe(::Type{S}, recipe::ProductRecipe) where S
+    invoke(_validate_recipe,Tuple{Type{S},FundamentalRecipe},S,recipe)
+    foreach(q -> _recipe_label(S,q),recipe.sources)
+    recipe.copy_index > 0 || throw(ArgumentError("Recipe copy index must be positive"))
+    return nothing
+end
+
+"""
+    validate_recipe_catalogue(S, recipes) -> nothing
+
+Check one correctly indexed fundamental entry per node. Dependencies are
+hard-coded and well founded; no runtime graph or cycle machinery is added.
+"""
+function validate_recipe_catalogue(::Type{S}, recipes::Vector{FundamentalRecipe}) where S
+    length(recipes) == nzops(S) || throw(ArgumentError("Incomplete fundamental catalogue"))
+    for (k,recipe) in enumerate(recipes)
+        _validate_recipe(S,recipe)
+        _recipe_label(S,recipe.target) == _unit_label(S,k) || throw(ArgumentError("Misindexed fundamental recipe"))
+    end
+    return nothing
+end
+
+"""
+    _irrep_validation_rules(S, adjoint) -> Vector{IrrepValidationRule}
+
+Build shared adjoint-in-fundamental-times-dual checks in historical label order.
+Family methods supply the adjoint label and append their special cases.
+"""
+function _irrep_validation_rules(::Type{S}, adjoint::NTuple{R,Int}) where {S,R}
+    rules = IrrepValidationRule[]
+    for left in fundamental_qlabels(S)
+        right = get_dualq(S,left)
+        left > right && continue
+        push!(rules,IrrepValidationRule(collect(adjoint),(collect(left),collect(right))))
+    end
+    return rules
+end
+
 include("abelian.jl")
 include("SU.jl")
 include("Sp.jl")

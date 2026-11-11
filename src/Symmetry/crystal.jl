@@ -40,7 +40,7 @@ Initialization is synchronized because crystal generation may run concurrently.
 function _crystal_weight_data(::Type{S}) where {S<:NonabelianSymm}
     lock(_CRYSTAL_WEIGHT_DATA_LOCK) do
         return get!(_CRYSTAL_WEIGHT_DATA, S) do
-            if _has_minuscule_recipes(S)
+            if !isempty(fundamental_recipes(S))
                 weights, charmap, _, _ = _minuscule_alphabet(S)
                 return weights, charmap
             end
@@ -62,8 +62,9 @@ function mw_crystal_qlabel(::Type{S}, qlabel::NTuple{NZ, Int}) where {S<:Nonabel
     @assert NZ == nlops(S)
     @assert all(>=(0), qlabel)
     word = Int[]
+    has_recipes = !isempty(fundamental_recipes(S))
     for i in 1:NZ
-        if _has_minuscule_recipes(S)
+        if has_recipes
             iszero(qlabel[i]) || append!(word, repeat(_fundamental_word(S,i), qlabel[i]))
         else
             append!(word, mw_column(S, i, qlabel))
@@ -90,7 +91,7 @@ Build local lowering/raising maps and their string lengths from the existing
 symbol alphabet of `S`. No tensor-product vertices are enumerated.
 """
 function get_crystal_ops(::Type{S}) where S <: NonabelianSymm
-    _has_minuscule_recipes(S) && return _minuscule_alphabet(S)[4]
+    !isempty(fundamental_recipes(S)) && return _minuscule_alphabet(S)[4]
     char_list = charlist(S)
     f = get_fops_std(S)
     e = get_eops_std(f)
@@ -381,4 +382,71 @@ function crystal_lowering_word(::Type{E6})
     end
     length(word) == 36 || error("Failed to construct an E6 longest-element word")
     return reverse!(word)
+end
+
+"""
+    _component_vertices(S, highest) -> Vector{CrystalVertex{S}}
+
+Enumerate a component in the fixed Demazure first-discovery order. Frozen source
+counts and stopping at known vertices match numerical basis construction.
+"""
+function _component_vertices(::Type{S}, highest::CrystalVertex{S}) where S
+    vertices = [highest]; seen = Set(vertices); cops = get_crystal_ops(S)
+    for i in crystal_lowering_word(S)
+        nsource = length(vertices)
+        for k in 1:nsource
+            v = vertices[k]
+            while true
+                v = apply_lowering(v,cops,i)
+                v === nothing && break
+                v in seen && break
+                push!(seen,v); push!(vertices,v)
+            end
+        end
+    end
+    return vertices
+end
+
+const _FUNDAMENTAL_WORDS = Dict{DataType,Dict{Int,Vector{Int}}}()
+const _FUNDAMENTAL_WORDS_LOCK = ReentrantLock()
+
+"""
+    _fundamental_word(S, k) -> Vector{Int}
+
+Return an owned copy of the deterministic fundamental highest word. Cache only
+integer words, never ambient numerical representations or mutable vertices.
+"""
+function _fundamental_word(::Type{S}, k::Int) where S
+    lock(_FUNDAMENTAL_WORDS_LOCK) do
+        words = get!(() -> Dict{Int,Vector{Int}}(), _FUNDAMENTAL_WORDS,S)
+        word = get!(words,k) do
+            _build_fundamental_word(S,k)
+        end
+        return copy(word)
+    end
+end
+
+"""
+    _build_fundamental_word(S, k) -> Vector{Int}
+
+Return a fundamental highest word using its fixed binary recipe. Minuscule
+fundamentals are atomic symbols; other fundamentals retain source words.
+"""
+function _build_fundamental_word(::Type{S}, k::Int) where S
+    recipe = fundamental_recipes(S)[k]
+    _validate_recipe(S,recipe)
+    if recipe isa MinusculeRecipe
+        return [_minuscule_alphabet(S)[3][k]]
+    end
+    recipe isa ProductRecipe || throw(ArgumentError("Crystal seed backend unavailable for $(typeof(recipe))"))
+    left_label,right_label = map(q -> _recipe_label(S,q),recipe.sources)
+    left = _component_vertices(S, mw_crystal_qlabel(S,left_label))
+    right = _component_vertices(S, mw_crystal_qlabel(S,right_label))
+    target = qlab2mwz(S,_unit_label(S,k)); cops = get_crystal_ops(S)
+    for x in left, y in right
+        get_weight(x) .+ get_weight(y) == target || continue
+        v = CrystalVertex{S}(vcat(x.word,y.word))
+        all(i -> epsilon(v,cops,i)==0, 1:nlops(S)) && return v.word
+    end
+    error("Fundamental recipe has no highest vertex for $S node $k")
 end

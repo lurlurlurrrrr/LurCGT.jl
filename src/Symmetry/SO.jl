@@ -295,30 +295,14 @@ function less_weight(::Type{SO{N}}, w1::NTuple{NZ, Int}, w2::NTuple{NZ, Int}) wh
 	return reverse(w1) < reverse(w2)
 end
 
-"""`fundamental_sequence(SO{N})` orders the even-orthogonal seeds before products."""
-function fundamental_sequence(::Type{SO{N}}) where N
-    iseven(N) && N >= 4 || throw(ArgumentError("Minuscule recipes require even SO(N), N ≥ 4"))
-    r = div(N, 2)
-    return unique(vcat([1, r-1, r], collect(2:r-2)))
-end
-
-"""`minuscule_nodes(SO{N})` returns the vector and half-spin nodes for even N."""
-function minuscule_nodes(::Type{SO{N}}) where N
-    iseven(N) && N >= 4 || throw(ArgumentError("Minuscule SO recipes require even N ≥ 4"))
-    return N == 4 ? [1,2] : [1,div(N,2)-1,div(N,2)]
-end
-
-"""`fundamental_sources(SO{N}, k)` selects the next vector-product component."""
-fundamental_sources(::Type{SO{N}}, k::Int) where N = (k-1, 1)
-
 """`get_dualq(SO{N}, q)` exchanges half-spin nodes when the even-orthogonal rank is odd."""
 get_dualq(::Type{SO{N}}, q::NTuple{R,Int}) where {N,R} = iseven(N) && isodd(R) ? ntuple(i -> i == R-1 ? q[R] : i == R ? q[R-1] : q[i],R) : q
 
-"""`fundamental_qlabels(SO)` returns unit labels in fixed construction order."""
-fundamental_qlabels(::Type{S}) where {S<:SO} = [_unit_label(S,k) for k in fundamental_sequence(S)]
-
-"""`_has_minuscule_recipes(SO)` reports whether Part 3a recipes are available."""
-_has_minuscule_recipes(::Type{SO{N}}) where N = iseven(N) && N >= 4
+"""`fundamental_qlabels(SO)` preserves historical label enumeration without scheduling construction."""
+function fundamental_qlabels(::Type{S}) where {S<:SO}
+    recipes = fundamental_recipes(S)
+    return [_recipe_label(S,recipes[k].target) for k in unique(vcat([1,nzops(S)-1,nzops(S)],collect(2:nzops(S)-2)))]
+end
 
 """`_minuscule_symbol_start(SO)` reserves the existing vector alphabet."""
 _minuscule_symbol_start(::Type{SO{N}}) where N = nzops(SO{N})+1
@@ -339,24 +323,49 @@ function _encode_minuscule_symbol(::Type{SO{N}}, w::Tuple, next::Int) where N
     return Base.Checked.checked_add(r+1,mask), next
 end
 
-"""`fundamental_validation_rules(SO)` returns fixed ordered target/source checks, including family-specific cases."""
-function fundamental_validation_rules(::Type{S}) where {S<:SO}
+"""`irrep_validation_rules(SO)` returns fixed ordered target/source checks, including family-specific cases."""
+function irrep_validation_rules(::Type{S}) where {S<:SO}
     r = nzops(S)
     if S == SO{4}
-        rules = Tuple{NTuple{r,Int},NTuple{r,Int},NTuple{r,Int}}[]
+        rules = IrrepValidationRule[]
         for k in 1:2
             q = _unit_label(S,k); a = 2 .* q
-            push!(rules,(a,q,q),(a,a,a))
+            push!(rules,IrrepValidationRule(collect(a),(collect(q),collect(q))),
+                IrrepValidationRule(collect(a),(collect(a),collect(a))))
         end
         return rules
     end
     adjoint = _unit_label(S,2)
-    rules = _fundamental_validation_rules(S,adjoint)
+    rules = _irrep_validation_rules(S,adjoint)
     if S == SO{8}
         for k in (3,4)
             q = _unit_label(S,k); target = 2 .* q
-            push!(rules,(target,q,q),(target,adjoint,adjoint))
+            push!(rules,IrrepValidationRule(collect(target),(collect(q),collect(q))),
+                IrrepValidationRule(collect(target),(collect(adjoint),collect(adjoint))))
         end
     end
     return rules
+end
+
+"""
+    fundamental_recipes(SO) -> Vector{FundamentalRecipe}
+
+Return owned metadata indexed by fundamental node. Dependencies are recursive;
+no numerical representations or crystal vertices are constructed here.
+"""
+function fundamental_recipes(::Type{S}) where {N,S<:SO{N}}
+    iseven(N) && N >= 4 || return FundamentalRecipe[]
+    r = div(N,2); recipes = FundamentalRecipe[]
+    for k in 1:r
+        q = collect(_unit_label(S,k))
+        if k >= r-1
+            push!(recipes,MinusculeRecipe(q,Int(big(2)^(r-1))))
+        elseif k == 1
+            push!(recipes,MinusculeRecipe(q,N))
+        else
+            push!(recipes,ProductRecipe(q,
+                (collect(_unit_label(S,k-1)),collect(_unit_label(S,1))),1,Int(binomial(big(N),k))))
+        end
+    end
+    return recipes
 end

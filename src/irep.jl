@@ -1,3 +1,5 @@
+const WeightInfo{NZ} = Dict{Tuple{NTuple{NZ, Int}, NTuple{NZ, Int}}, Tuple{Int, Int}}
+
 # Sl : lowering operators, Sz : z-operator
 # norm2s : square norm values of basis element.
 # For defining irep, values of innerprod are all [[1]], 1*1 matrix with entry 1
@@ -215,3 +217,163 @@ end
 Return the symmetry type parameter of an irrep.
 """
 symm(rep::Irep{S}) where {S<:Symmetry} = S
+
+"""
+    construct_recipe(S, RT, recipe::MinusculeRecipe; candidates=nothing, verbose)
+
+Execute a minuscule seed recipe without saving it. Dispatch occurs outside the
+numerical loops; the target label selects the atomic crystal alphabet.
+"""
+function construct_recipe(::Type{S}, ::Type{RT}, recipe::MinusculeRecipe;
+        candidates=nothing, verbose=VERBOSE[]) where {S,RT<:Integer}
+    _validate_recipe(S,recipe)
+    return get_minuscule_irep(S,RT,findfirst(==(1),recipe.target))
+end
+
+"""
+    construct_recipe(S, RT, recipe::ProductRecipe; candidates=nothing, verbose)
+
+Recursively obtain ordered source irreps and extract the selected target copy.
+Propagate incidental collection through dependencies without saving candidates.
+"""
+function construct_recipe(::Type{S}, ::Type{RT}, recipe::ProductRecipe;
+        candidates=nothing, verbose=VERBOSE[]) where {S,RT<:Integer}
+    _validate_recipe(S,recipe)
+    left,right = map(q -> _recipe_label(S,q),recipe.sources)
+    # Cache lookup erases coefficient-type inference; restore the requested storage type.
+    rep_type = Irep{S,nlops(S),nzops(S),RT}
+    x = getNsave_irep(S,RT,left; candidates,verbose)::rep_type
+    y = getNsave_irep(S,RT,right; candidates,verbose)::rep_type
+    Sl,Sz,_,wi = tensor_prod_reps(x,y;verbose)
+    return get_irep_frommw(S,Sl,Sz,x.innerprod,y.innerprod,
+        qlab2mwz(S,_recipe_label(S,recipe.target)),wi;
+        copy_index=recipe.copy_index,candidates,verbose)
+end
+
+"""`construct_recipe(S, RT, recipe::AdjointRecipe)` rejects the deferred adjoint backend."""
+function construct_recipe(::Type{S}, ::Type{RT}, recipe::AdjointRecipe;
+        candidates=nothing, verbose=VERBOSE[]) where {S,RT<:Integer}
+    _validate_recipe(S,recipe)
+    throw(ArgumentError("The direct adjoint crystal backend is not implemented for $S"))
+end
+
+"""
+    construct_fundamental(S, RT, k; candidates=nothing) -> Irep
+
+Execute the requested hard-coded fundamental recipe, recursively loading only
+its required sources. Optional candidates receives incidental nonfundamental
+components; the caller saves the returned fundamental.
+"""
+function construct_fundamental(::Type{S}, ::Type{RT}, k::Int; candidates=nothing, verbose=VERBOSE[]) where {S,RT<:Integer}
+    recipes = fundamental_recipes(S)
+    validate_recipe_catalogue(S,recipes)
+    1 <= k <= length(recipes) || throw(ArgumentError("Unknown fundamental node"))
+    recipe = recipes[k]
+    rep = construct_recipe(S,RT,recipe; candidates,verbose)
+    rep.qlabel == _recipe_label(S,recipe.target) || error("Constructed recipe target differs")
+    dimension(rep) == recipe.dimension || error("Constructed recipe dimension differs")
+    return rep
+end
+
+"""
+    _orthogonal_remainder(v, basis, metric) -> Vector
+
+Project an integer candidate off mutually metric-orthogonal stored columns.
+Clear denominators by integer cross multiplication and primitive rescaling;
+no rational vector or nonexact division is introduced.
+"""
+function _orthogonal_remainder(v::Vector{RT}, basis::Vector{Vector{RT}}, metric::Matrix{RT}) where RT
+    v = copy(v)
+    for u in basis
+        overlap = dot(u,metric*v)
+        iszero(overlap) && continue
+        norm = dot(u,metric*u)
+        v = norm*v - overlap*u
+        iszero(v) && return v
+        v = div.(v,gcd(v))
+    end
+    return v
+end
+
+"""
+    get_irep_frommw(S, Sl, Sz, metric1, metric2, mw, weight_info; copy_index=1, candidates=nothing, copies=nothing)
+
+Extract the component with explicit highest weight `mw` from an ordered
+product, constructing all preceding multiplets first. The caller converts its
+target q-label with `qlab2mwz(S, qlabel)`. Select copies by exact projection of
+standard basis vectors in index order. Optional `candidates` collects nonfundamental normalized irreps
+without saving them. Optional `copies` collects every target copy before returning
+the selected copy; errors propagate and absent targets are rejected.
+"""
+function get_irep_frommw(::Type{S},
+        Sl::NTuple{NL,Dict{NTuple{NZ,Int},SparseMatrixCSC{RT}}},
+        Sz::Dict{NTuple{NZ,Int},Tuple{Int,Int}},
+        metric1::Dict{NTuple{NZ,Int},Matrix{RT}},
+        metric2::Dict{NTuple{NZ,Int},Matrix{RT}},
+        mw::NTuple{NZ,Int},
+        winfo::Dict{NTuple{NZ,Int},WeightInfo{NZ}};
+        copy_index::Int=1, candidates=nothing, copies=nothing, verbose=VERBOSE[]) where {S,NL,NZ,RT<:Integer}
+    copy_index > 0 || throw(ArgumentError("Copy index must be positive"))
+    weights = sorted_zvals(Sz)
+    haskey(Sz,mw) || throw(ArgumentError("Target weight absent from product"))
+    # The maximal Cartan component has a one-dimensional highest sector.
+    if mw == first(weights) && copy_index == 1
+        rep, _ = _irep_component(S,Sl,Sz,metric1,metric2,mw,RT[1],winfo; verbose)
+        if candidates !== nothing && sum(rep.qlabel) > 1; push!(candidates,rep); end
+        copies === nothing || push!(copies,rep)
+        return rep
+    end
+    metrics = Dict{NTuple{NZ,Int},Matrix{RT}}()
+    found = Dict(w => Vector{RT}[] for w in weights)
+    target_copies = 0
+    selected = nothing
+    for w in weights
+        rev_less(w,mw) && break
+        d = Sz[w][2]-Sz[w][1]+1
+        if !haskey(metrics,w)
+            metrics[w] = get_innerprodmat(S,RT,w,Matrix{RT}(I,d,d),d,metric1,metric2,winfo; verbose)
+        end
+        for index in 1:d
+            length(found[w]) == d && break
+            v = zeros(RT,d); v[index] = 1
+            v = _orthogonal_remainder(v,found[w],metrics[w])
+            iszero(v) && continue
+            all(>=(0),getqlabel(S,w)) || error("Residual product state is not highest weight")
+            rep, bases = _irep_component(S,Sl,Sz,metric1,metric2,w,v,winfo; verbose)
+            if candidates !== nothing && sum(rep.qlabel)>1; push!(candidates,rep); end
+            if w == mw
+                target_copies += 1
+                if target_copies == copy_index
+                    copies === nothing && return rep
+                    selected = rep
+                end
+                copies === nothing || push!(copies,rep)
+            end
+            for z in sorted_zvals(bases)
+                B = bases[z]; zd = size(B,1)
+                if !haskey(metrics,z)
+                    metrics[z] = get_innerprodmat(S,RT,z,Matrix{RT}(I,zd,zd),zd,metric1,metric2,winfo; verbose)
+                end
+                for j in axes(B,2)
+                    u = _orthogonal_remainder(B[:,j],found[z],metrics[z])
+                    iszero(u) && error("Dependent multiplet column")
+                    push!(found[z],u)
+                end
+            end
+        end
+    end
+    selected === nothing || return selected
+    throw(ArgumentError("Target irrep or requested copy absent from product"))
+end
+
+"""
+    same_irep_fields(a, b) -> Bool
+
+Compare every mathematical Irep field exactly, including primitive inverse
+metric factors. Ignore only the allocation-dependent `size_byte` field.
+"""
+function same_irep_fields(a::Irep, b::Irep)
+    typeof(a) === typeof(b) || return false
+    return a.Sl == b.Sl && a.Sz == b.Sz && a.innerprod == b.innerprod &&
+        a.inv_innerprod == b.inv_innerprod && a.qlabel == b.qlabel && a.dimension == b.dimension
+end

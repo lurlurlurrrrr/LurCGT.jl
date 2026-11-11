@@ -231,31 +231,9 @@ Return the fundamental Sp(N) qlabels.
 Each qlabel is a unit vector in fundamental-weight coordinates. These qlabels
 seed tensor-product decomposition and irrep generation.
 """
-function fundamental_qlabels(::Type{Sp{N}}) where N
-	funda_lst = Vector{NTuple{div(N, 2), Int}}()
-	for i in 1:div(N, 2)
-		q = Tuple(i == j ? 1 : 0 for j=1:div(N, 2))
-		push!(funda_lst, q)
-	end
-	return funda_lst
+function fundamental_qlabels(::Type{S}) where {S<:Sp}
+    return [_recipe_label(S,recipe.target) for recipe in fundamental_recipes(S)]
 end
-
-"""`fundamental_sequence(Sp{N})` orders the vector-generated fundamentals."""
-fundamental_sequence(::Type{Sp{N}}) where N = collect(1:div(N, 2))
-
-"""`minuscule_nodes(Sp{N})` contains only the vector node."""
-minuscule_nodes(::Type{Sp{N}}) where N = [1]
-
-"""
-    fundamental_sources(S, k) -> (left_node, right_node)
-
-Return the ordered binary recipe for nonminuscule fundamental k. Seed nodes
-are constructed directly and must not be passed to this function.
-"""
-fundamental_sources(::Type{Sp{N}}, k::Int) where N = (k-1, 1)
-
-"""`_has_minuscule_recipes(Sp)` reports whether Part 3a recipes are available."""
-_has_minuscule_recipes(::Type{Sp{N}}) where N = true
 
 """`_minuscule_symbol_start(Sp)` reserves the existing vector alphabet."""
 _minuscule_symbol_start(::Type{Sp{N}}) where N = nzops(Sp{N})+1
@@ -263,10 +241,27 @@ _minuscule_symbol_start(::Type{Sp{N}}) where N = nzops(Sp{N})+1
 """`_preserve_vector_symbols(Sp, k)` keeps vector-seed symbol assignments compatible."""
 _preserve_vector_symbols(::Type{Sp{N}}, k::Int) where N = k == 1
 
-"""`fundamental_validation_rules(Sp)` returns fixed ordered target/source checks, including family-specific cases."""
-function fundamental_validation_rules(::Type{S}) where {S<:Sp}
+"""`irrep_validation_rules(Sp)` returns fixed ordered target/source checks, including family-specific cases."""
+function irrep_validation_rules(::Type{S}) where {S<:Sp}
     adjoint = 2 .* _unit_label(S,1)
-    rules = _fundamental_validation_rules(S,adjoint)
-    S == Sp{2} && push!(rules,(adjoint,adjoint,adjoint))
+    rules = _irrep_validation_rules(S,adjoint)
+    S == Sp{2} && push!(rules,IrrepValidationRule(collect(adjoint),(collect(adjoint),collect(adjoint))))
     return rules
+end
+
+"""
+    fundamental_recipes(Sp) -> Vector{FundamentalRecipe}
+
+Return owned metadata indexed by fundamental node. Dependencies are recursive;
+no numerical representations or crystal vertices are constructed here.
+"""
+function fundamental_recipes(::Type{S}) where {N,S<:Sp{N}}
+    r = div(N,2)
+    recipes = FundamentalRecipe[MinusculeRecipe(collect(_unit_label(S,1)),N)]
+    for k in 2:r
+        dim = Int(binomial(big(N),k)-binomial(big(N),k-2))
+        push!(recipes,ProductRecipe(collect(_unit_label(S,k)),
+            (collect(_unit_label(S,k-1)),collect(_unit_label(S,1))),1,dim))
+    end
+    return recipes
 end

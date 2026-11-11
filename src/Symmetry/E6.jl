@@ -4,15 +4,6 @@ totxt(::Type{E6}) = "E6"
 nlops(::Type{E6}) = 6
 nzops(::Type{E6}) = 6
 
-"""`fundamental_sequence(E6)` returns the fixed seed/product dependency order."""
-fundamental_sequence(::Type{E6}) = [1, 6, 2, 3, 5, 4]
-
-"""`minuscule_nodes(E6)` contains the dual 27-dimensional seeds."""
-minuscule_nodes(::Type{E6}) = [1, 6]
-
-"""`fundamental_sources(E6, k)` gives the fixed E6 product recipe."""
-fundamental_sources(::Type{E6}, k::Int) = ((0,0), (1,6), (1,1), (3,1), (6,6), (0,0))[k]
-
 """`_exceptional_weight_rows(E6)` returns the fixed reversed scaled-root conversion."""
 _exceptional_weight_rows(::Type{E6}) = ((2,3,4,6,5,4,),(4,6,8,12,10,5,),(6,9,12,18,12,6,),(5,6,10,12,8,4,),(3,6,6,9,6,3,),(4,3,5,6,4,2,),)
 
@@ -74,13 +65,30 @@ less_weight(::Type{S}, a::Tuple, b::Tuple) where {S<:E6} = rev_less(a,b)
 """`get_dualq(E6, q)` exchanges the two pairs of dual fundamental nodes."""
 get_dualq(::Type{E6}, q::NTuple{6,Int}) = (q[6],q[2],q[5],q[4],q[3],q[1])
 
-"""`fundamental_qlabels(E6)` returns unit labels in fixed construction order."""
-fundamental_qlabels(::Type{S}) where {S<:E6} = [_unit_label(S,k) for k in fundamental_sequence(S)]
+"""`fundamental_qlabels(E6)` preserves historical label enumeration without scheduling construction."""
+function fundamental_qlabels(::Type{S}) where {S<:E6}
+    recipes = fundamental_recipes(S)
+    return [_recipe_label(S,recipes[k].target) for k in (1,6,2,3,5,4)]
+end
 
-"""`_has_minuscule_recipes(E6)` reports whether Part 3a recipes are available."""
-_has_minuscule_recipes(::Type{E6}) = true
+"""`irrep_validation_rules(E6)` returns fixed ordered target/source checks, including family-specific cases."""
+function irrep_validation_rules(::Type{S}) where {S<:E6}
+    return _irrep_validation_rules(S,_unit_label(S,2))
+end
 
-"""`fundamental_validation_rules(E6)` returns fixed ordered target/source checks, including family-specific cases."""
-function fundamental_validation_rules(::Type{S}) where {S<:E6}
-    return _fundamental_validation_rules(S,_unit_label(S,2))
+"""
+    fundamental_recipes(E6) -> Vector{FundamentalRecipe}
+
+Return owned metadata indexed by fundamental node. Dependencies are recursive;
+no numerical representations or crystal vertices are constructed here.
+"""
+function fundamental_recipes(::Type{S}) where {S<:E6}
+    return FundamentalRecipe[
+        MinusculeRecipe(collect(_unit_label(S,1)),27),
+        ProductRecipe(collect(_unit_label(S,2)), (collect(_unit_label(S,1)),collect(_unit_label(S,6))),1,78),
+        ProductRecipe(collect(_unit_label(S,3)), (collect(_unit_label(S,1)),collect(_unit_label(S,1))),1,351),
+        ProductRecipe(collect(_unit_label(S,4)), (collect(_unit_label(S,3)),collect(_unit_label(S,1))),1,2925),
+        ProductRecipe(collect(_unit_label(S,5)), (collect(_unit_label(S,6)),collect(_unit_label(S,6))),1,351),
+        MinusculeRecipe(collect(_unit_label(S,6)),27)
+    ]
 end

@@ -1,4 +1,3 @@
-const WeightInfo{NZ} = Dict{Tuple{NTuple{NZ, Int}, NTuple{NZ, Int}}, Tuple{Int, Int}}
 const CG3block{NZ, CT} = Dict{NTuple{3, NTuple{NZ, Int}}, Array{CT, 4}}
 
 """
@@ -705,26 +704,6 @@ function divcfac(v::Vector{<:Integer})
 end
 
 """
-    is_fundamental(::Type{S}, qlabel) -> Bool
-
-Return whether `qlabel` is treated as a fundamental building block.
-
-Use unit Dynkin labels for Part 3a families. The legacy odd-orthogonal
-bootstrap additionally recognizes its vector-derived doubled-spin label.
-The trivial label is also a bootstrap seed.
-"""
-function is_fundamental(::Type{S}, 
-    qlabel::NTuple{NZ, Int}) where {S<:NonabelianSymm, NZ}
-
-    if sum(qlabel) <= 1 return true end
-    if isSON(S) && sum(qlabel) == 2
-        N = defirepdim(S)
-        if N % 2 == 1 && qlabel[end] == 2 return true end
-    end
-    return false
-end
-
-"""
     split_qlabel(::Type{S}, qlabel) -> (bigq, smallq)
 
 Split a non-fundamental qlabel into a smaller remainder and a fundamental part.
@@ -741,7 +720,7 @@ function split_qlabel(::Type{S},
     # For example, (a, b, 0, 0) -> (a, b-1, 0, 0) and (0, 1, 0, 0)
     lastidx = findlast(!iszero, qlabel)
     smallq = [0 for _=1:NZ]
-    if isSON(S) && !_has_minuscule_recipes(S)
+    if isSON(S) && isempty(fundamental_recipes(S))
         N = defirepdim(S)
         if N % 2 == 1 && lastidx == NZ
             @assert qlabel[NZ] % 2 == 0; smallq[NZ] = 2
@@ -775,67 +754,72 @@ function getNsave_irep(::Type{S},
     return Irep(S, RT, Sl, Sz, innerprod, inv_innerprod, 1)
 end
 
-# Recursively get and save ireps. 
+"""
+    getNsave_irep(S, RT, qlabel; candidates=nothing, verbose)
+
+Load a non-Abelian irrep or recursively construct and cache it. Fundamental
+misses follow their recipe. Optional `candidates` collects incidental
+nonfundamental components from newly constructed fundamental dependencies;
+these candidates are never saved as canonical references.
+"""
 function getNsave_irep(::Type{S}, 
     ::Type{RT}, 
     qlabel::NTuple{NZ, Int}; 
-    verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number, NZ}
+    candidates=nothing, verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number, NZ}
 
     @assert NZ == nzops(S) && all(>=(0), qlabel)
     isvalidsymm(S) || throw(ArgumentError("Invalid symmetry: $S"))
-    if !all(iszero, qlabel) && !_has_minuscule_recipes(S)
-        throw(ArgumentError("No fundamental irrep backend for $S; B/G2 require the deferred virtual-crystal backend"))
-    end
     # If it exists, load the representation and return
     irep = load_irep_sqlite(S, RT, qlabel; verbose) 
     if !isnothing(irep) @assert isa(irep, Irep); return irep end
     all(iszero, qlabel) && return initialize_symmetry(S, RT; verbose)
+    if isempty(fundamental_recipes(S))
+        throw(ArgumentError("No fundamental irrep backend for $S; B/G2 require the deferred virtual-crystal backend"))
+    end
     trivial_label = ntuple(_ -> 0, NZ)
     if isnothing(load_irep_sqlite(S, RT, trivial_label; verbose))
         initialize_symmetry(S, RT; verbose)
     end
-    if _has_minuscule_recipes(S)
-        if sum(qlabel) == 1
-            rep = construct_fundamental(S, RT, findfirst(==(1), qlabel); verbose)
-            save_irep_sqlite(rep; verbose)
-            return rep
-        end
+    if sum(qlabel) == 1
+        rep = construct_fundamental(S, RT, findfirst(==(1), qlabel); candidates,verbose)
+        save_irep_sqlite(rep; verbose)
+        return rep
     end
 
     # If not, build the representation from smaller ones
     bigq, smallq = split_qlabel(S, qlabel)
-    irep1 = getNsave_irep(S, RT, bigq; verbose) 
-    irep2 = getNsave_irep(S, RT, smallq; verbose)
+    irep1 = getNsave_irep(S, RT, bigq; candidates,verbose)
+    irep2 = getNsave_irep(S, RT, smallq; candidates,verbose)
     # Get largest irep from the product rep of irep1 and irep2
     # and return the largest irep in the product rep
     # sl_prod, sz_prod : lowering operators and z-operators of the product representation
     # prod_weight_info: information about weights of product representation
     sl_prod, sz_prod, _, prod_weight_info = tensor_prod_reps(irep1, irep2; verbose)
     irep_new = get_irep_frommw(S, sl_prod, sz_prod, 
-        irep1.innerprod, irep2.innerprod, nothing, prod_weight_info; verbose)
+        irep1.innerprod, irep2.innerprod, qlab2mwz(S, qlabel), prod_weight_info; verbose)
     save_irep_sqlite(irep_new; verbose)
     return irep_new
 end
 
 """
-    _irep_component(S, Sl, Sz, metric1, metric2, mw, weight_info; mwstate, verbose)
+    _irep_component(S, Sl, Sz, metric1, metric2, mw, mwstate, weight_info; verbose)
 
 Build one embedded component by the fixed Demazure traversal. Return its
-normalized irrep and ambient weight-basis columns. All divisions destined for
-integer storage are checked; only inverse metrics may be rational.
+normalized irrep and ambient weight-basis columns. The required `mwstate` is
+the highest-weight vector in the product basis at `mw`; it is not mutated.
+All divisions destined for integer storage are checked; only inverse metrics
+may be rational.
 """
 function _irep_component(::Type{S},
         Sl::NTuple{NL, Dict{NTuple{NZ, Int}, SparseMatrixCSC{RT}}},
         Sz::Dict{NTuple{NZ, Int}, Tuple{Int, Int}},
         inner_prod1::Dict{NTuple{NZ,Int},Matrix{RT}},
         inner_prod2::Dict{NTuple{NZ,Int},Matrix{RT}},
-        mw::Union{NTuple{NZ, Int}, Nothing},
+        mw::NTuple{NZ, Int},
+        mwstate::Vector{RT},
         weight_info::Dict{NTuple{NZ, Int}, WeightInfo{NZ}};
-        mwstate=nothing, verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number, NL, NZ}
+        verbose=VERBOSE[]) where {S<:NonabelianSymm, RT<:Number, NL, NZ}
 
-    # ordered (from highest to lowest) z-values of the original representation
-    zvals_ordered = sorted_zvals(Sz)
-    mw = isnothing(mw) ? zvals_ordered[1] : mw # Maximal weight of the original representation
     qlabel = getqlabel(S, mw) # q-label of the original representation
     ninnerprod = Dict{NTuple{NZ, Int}, Matrix{RT}}()    
 
@@ -844,7 +828,6 @@ function _irep_component(::Type{S},
     # Keys are just the weights 
     weight_basis_dict = Dict{NTuple{NZ, Int}, Matrix{RT}}()
     # Put maximal weight state in the dictionary
-    mwstate = isnothing(mwstate) ? RT[1] : mwstate
     weight_basis_dict[Tuple(mw)] = reshape(copy(mwstate), :, 1)
     # The dimension of weight spaces
     weight_cnt = Dict{NTuple{NZ, Int}, Int}()
@@ -1036,18 +1019,6 @@ function get_TNmat(inprod_matrix::Matrix{RT};
     end
     @assert isdiag(Nmat)
     return Tmat, diag(Nmat)
-end
-
-# Currently this function is not used.
-# It was used to calculate TNT and its inverse.
-inv_mat(mat::Matrix{RT}; verbose=VERBOSE[]) where RT<:Number =
-(s = size(mat, 1); solve_gaussian(s, copy(mat), Matrix{RT}(I, s, s); verbose=verbose))
-
-# Currently this function is not used.
-# It was used to calculate TNT and its inverse.
-function get_Ninv(Nmatdiag::Vector{RT}) where {RT<:Number}
-    comm_mult = lcm(Nmatdiag)
-    return [div(comm_mult, x) for x in Nmatdiag], comm_mult
 end
 
 # Get 1j-symbol for the given q-label
