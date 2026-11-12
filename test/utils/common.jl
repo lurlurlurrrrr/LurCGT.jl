@@ -3,6 +3,54 @@
 
 comm(A, B) = A * B - B * A 
 
+"""
+    lowering_matrix(rep::LurCGT.Irep, i::Int, FT=Float64)
+
+Return a `SparseMatrixCSC{FT,Int}` in an orthonormal basis, so its ordinary
+adjoint represents the metric adjoint of the stored lowering operator.
+For each weight factor the full Gram block as `G = C' * C` using upper
+Cholesky factors, and transform each block as `C_dest * F * inv(C_source)`
+using a triangular solve. Weight ranges and `ordered_zvalues` remain valid,
+but basis vectors within each range change. No input is mutated.
+`FT` must be an abstract-float subtype; conversion is approximate. Invalid
+indices raise `BoundsError`, and non-positive-definite metrics raise an error.
+"""
+function lowering_matrix(rep::LurCGT.Irep{S}, i::Int,
+        ::Type{FT}=Float64) where {S,FT<:AbstractFloat}
+    blocks = rep.Sl[i]
+    factors = Dict(w => cholesky(Symmetric(FT.(G))).U for (w,G) in rep.innerprod)
+    rows = Int[]; cols = Int[]; values = FT[]
+    dz = LurCGT.getdz(S,i)
+    for (w,block) in blocks
+        dest = w .- dz
+        transformed = factors[dest] * Matrix{FT}(block) / factors[w]
+        r,c,v = findnz(sparse(transformed))
+        append!(rows,r .+ (rep.Sz[dest][1]-1))
+        append!(cols,c .+ (rep.Sz[w][1]-1))
+        append!(values,v)
+    end
+    n = LurCGT.dimension(rep)
+    return sparse(rows,cols,values,n,n)
+end
+
+"""
+    ordered_zvalues(rep::LurCGT.Irep) -> Vector{NTuple{NZ,Int}}
+
+Return one stored z-weight per basis state in the global order given by `rep.Sz`,
+matching the rows and columns of `lowering_matrix`. Degenerate weights repeat
+for every state in their inclusive index range. The returned vector is new;
+`rep` is not mutated and weights are not converted to Dynkin labels.
+"""
+function ordered_zvalues(rep::LurCGT.Irep{S,NL,NZ}) where {S,NL,NZ}
+    weights = Vector{NTuple{NZ,Int}}(undef,LurCGT.dimension(rep))
+    for (w,(first,last)) in rep.Sz
+        for k in first:last
+            weights[k] = w
+        end
+    end
+    return weights
+end
+
 function generate_incom(::Type{S}, dim_limit, qlimit=4) where S<:NonabelianSymm
     NZ = nzops(S)
     ins = Vector{NTuple{NZ, Int}}()
@@ -16,11 +64,6 @@ function generate_incom(::Type{S}, dim_limit, qlimit=4) where S<:NonabelianSymm
         dim = prod_dim
     end
     return ins
-end
-
-function dimension(::Type{S}, qlabel::NTuple{NZ, Int}) where {S<:NonabelianSymm, NZ}
-    irep = LurCGT.getNsave_irep(S, BigInt, qlabel)
-    return LurCGT.dimension(irep)
 end
 
 function select_out(vo::LurCGT.ValidOuts{S, N, NZ},
@@ -245,4 +288,84 @@ function get_spaces(::Type{S},
     end
     return cgt1_outsp, cgt1_insp, cgt2_outsp, cgt2_insp, cgt1_internalsp, cgt2_internalsp, 
     cgt1legs, cgt2legs, contracted_1out2in, contracted_1in2out
+end
+
+"""
+    check_generator_residual(residual, scale, context; atol, rtol)
+
+Require a finite Frobenius/Euclidean residual norm below `atol + rtol*scale`.
+Throw an error with relation context and the measured bound on failure. This
+uses an absolute bound for zero-valued relations, including nested commutators.
+"""
+function check_generator_residual(residual, scale, context; atol, rtol)
+    measured = norm(residual)
+    bound = atol + rtol*scale
+    isfinite(measured) && isfinite(bound) && measured <= bound ||
+        error("$context: residual $measured exceeds bound $bound")
+    return nothing
+end
+
+"""
+    validate_crystal_generators(rep, FT=Float64; reference=nothing, atol=100eps(FT), rtol=1000eps(FT))
+
+Validate exact lowering weight shifts and metric-aware sparse self/mixed
+commutators and lowering Serre relations. Fit each self-commutator to stored
+z-coordinates and anchor its action to `getqlabel`. A full-rank weight matrix
+is required unless `reference` supplies coefficients from a faithful irrep of
+the same symmetry; this permits checking SO(4) spin fundamentals. When supplied,
+compare the fitted coefficients with that reference. Return a matrix with one
+coefficient row per lowering index for comparison across irreps. No inputs are mutated. Failures identify the irrep,
+operator indices, relation, and residual. Use BigFloat for higher-precision
+checks; an irrep with deficient weight rank cannot establish its own reference.
+"""
+function validate_crystal_generators(rep::LurCGT.Irep{S,NL,NZ},
+        ::Type{FT}=Float64; reference=nothing, atol=100eps(FT), rtol=1000eps(FT)) where {S,NL,NZ,FT<:AbstractFloat}
+    weights = ordered_zvalues(rep)
+    n = length(weights)
+    context = "$S $(rep.qlabel)"
+    Z = FT[weights[k][a] for k in 1:n, a in 1:NZ]
+    full_rank = n >= NZ && all(abs.(diag(qr(Z).R)) .> rtol*norm(Z))
+    reference === nothing || size(reference) == (NL,NZ) ||
+        throw(ArgumentError("$context: wrong reference coefficient dimensions"))
+    full_rank || reference !== nothing ||
+        error("$context: insufficient weight rank for generator coefficients")
+    matrices = [lowering_matrix(rep,i,FT) for i in 1:NL]
+    coefficients = Matrix{FT}(undef,NL,NZ)
+    for i in 1:NL
+        for (w,block) in rep.Sl[i]
+            dest = w .- LurCGT.getdz(S,i)
+            haskey(rep.Sz,dest) || error("$context node $i: lowering leaves stored weights at $w")
+            rows,cols,values = findnz(block)
+            for (r,c,v) in zip(rows,cols,values)
+                iszero(v) && continue
+                weights[rep.Sz[dest][1]+r-1] == weights[rep.Sz[w][1]+c-1] .- LurCGT.getdz(S,i) ||
+                    error("$context node $i: incorrect weight shift at $w entry ($r,$c)")
+            end
+        end
+        m = matrices[i]; H = m'*m-m*m'; h = diag(H)
+        scale = 2norm(m)^2
+        check_generator_residual(H-spdiagm(0=>h),scale,"$context node $i diagonal self-commutator";atol,rtol)
+        c = full_rank ? Z \ h : FT.(reference[i,:])
+        if reference !== nothing
+            expected_c = FT.(reference[i,:])
+            check_generator_residual(c-expected_c,max(norm(c),norm(expected_c)),"$context node $i reference coefficients";atol,rtol)
+        end
+        check_generator_residual(Z*c-h,max(norm(Z)*norm(c),norm(h)),"$context node $i z-coefficient fit";atol,rtol)
+        expected = FT[LurCGT.getqlabel(S,w)[i] for w in weights]
+        check_generator_residual(h-expected,max(scale,norm(expected)),"$context node $i coroot normalization";atol,rtol)
+        coefficients[i,:] = c
+    end
+    for i in 1:NL, j in 1:NL
+        i == j && continue
+        x,y = matrices[i],matrices[j]
+        check_generator_residual(x'*y-y*x',2norm(x)*norm(y),"$context nodes ($i,$j) mixed commutator";atol,rtol)
+        aij = LurCGT.getqlabel(S,Tuple(LurCGT.getdz(S,j)))[i]
+        R = y; scale = norm(y)
+        for _ in 1:1-aij
+            R = x*R-R*x
+            scale *= 2norm(x)
+        end
+        check_generator_residual(R,scale,"$context nodes ($i,$j) Serre relation";atol,rtol)
+    end
+    return coefficients
 end

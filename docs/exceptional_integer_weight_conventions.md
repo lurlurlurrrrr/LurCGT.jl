@@ -2,7 +2,8 @@
 
 Status: coordinate specification. E6/E7 conversions are implemented in
 [E6.jl](../src/Symmetry/E6.jl) and [E7.jl](../src/Symmetry/E7.jl);
-E8/F4 remain coordinate proposals.
+[F4.jl](../src/Symmetry/F4.jl) also implements the F4 conversion below.
+E8 remains a coordinate proposal.
 Existing A–D/G2 weight-coordinate conventions remain unchanged.
 
 ## Storage and ordering

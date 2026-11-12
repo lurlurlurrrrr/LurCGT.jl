@@ -33,7 +33,8 @@ const _CRYSTAL_WEIGHT_DATA_LOCK = ReentrantLock()
     _crystal_weight_data(::Type{S}) -> (weights, character_map)
 
 Return cached symbol weights and indices for the crystal alphabet of `S`.
-Part 3a families include every minuscule seed; legacy families use vector symbols.
+Recipe families include all minuscule and virtual seeds; other families use
+existing vector symbols.
 The cache owns these mutable results; callers must treat them as read-only.
 Initialization is synchronized because crystal generation may run concurrently.
 """
@@ -41,7 +42,7 @@ function _crystal_weight_data(::Type{S}) where {S<:NonabelianSymm}
     lock(_CRYSTAL_WEIGHT_DATA_LOCK) do
         return get!(_CRYSTAL_WEIGHT_DATA, S) do
             if !isempty(fundamental_recipes(S))
-                weights, charmap, _, _ = _minuscule_alphabet(S)
+                weights, charmap, _, _ = _seed_alphabet(S)
                 return weights, charmap
             end
             weights = getsz_def_vec(S)::Vector{Vector{Int}}
@@ -55,7 +56,7 @@ end
     mw_crystal_qlabel(S, qlabel) -> CrystalVertex{S}
 
 Construct the highest tensor word in ascending fundamental-node order from
-minuscule symbols and fixed fundamental recipes. Legacy families delegate to
+seed symbols and fixed fundamental recipes. Other families delegate to
 `mw_column`. The returned word is owned.
 """
 function mw_crystal_qlabel(::Type{S}, qlabel::NTuple{NZ, Int}) where {S<:NonabelianSymm, NZ}
@@ -88,10 +89,11 @@ end
     get_crystal_ops(S) -> Crystal_ops{S}
 
 Build local lowering/raising maps and their string lengths from the existing
-symbol alphabet of `S`. No tensor-product vertices are enumerated.
+symbol alphabet of `S`. Virtual seeds enumerate their ambient crystal paths;
+no numerical representations are constructed.
 """
 function get_crystal_ops(::Type{S}) where S <: NonabelianSymm
-    !isempty(fundamental_recipes(S)) && return _minuscule_alphabet(S)[4]
+    !isempty(fundamental_recipes(S)) && return _seed_alphabet(S)[4]
     char_list = charlist(S)
     f = get_fops_std(S)
     e = get_eops_std(f)
@@ -430,13 +432,13 @@ end
     _build_fundamental_word(S, k) -> Vector{Int}
 
 Return a fundamental highest word using its fixed binary recipe. Minuscule
-fundamentals are atomic symbols; other fundamentals retain source words.
+and virtual seeds are atomic symbols; product fundamentals retain source words.
 """
 function _build_fundamental_word(::Type{S}, k::Int) where S
     recipe = fundamental_recipes(S)[k]
     _validate_recipe(S,recipe)
-    if recipe isa MinusculeRecipe
-        return [_minuscule_alphabet(S)[3][k]]
+    if recipe isa MinusculeRecipe || recipe isa VirtualRecipe
+        return [_seed_alphabet(S)[3][k]]
     end
     recipe isa ProductRecipe || throw(ArgumentError("Crystal seed backend unavailable for $(typeof(recipe))"))
     left_label,right_label = map(q -> _recipe_label(S,q),recipe.sources)
@@ -449,4 +451,44 @@ function _build_fundamental_word(::Type{S}, k::Int) where S
         all(i -> epsilon(v,cops,i)==0, 1:nlops(S)) && return v.word
     end
     error("Fundamental recipe has no highest vertex for $S node $k")
+end
+
+"""
+    _seed_alphabet(S) -> (weights, symbol_indices, highest_symbols, operators)
+
+Assemble disjoint integer alphabets from minuscule and virtual seeds, preserving
+existing vector symbols. Local vertex indices, not weights, identify vertices;
+virtual seeds may have several vertices with the same weight.
+"""
+function _seed_alphabet(::Type{S}) where S
+    weights = Vector{Int}[]; indices = Dict{Int,Int}(); highest = Dict{Int,Int}()
+    f = [Dict{Int,Int}() for _ in 1:nlops(S)]
+    nextsymbol = _minuscule_symbol_start(S)
+    for (k,recipe) in enumerate(fundamental_recipes(S))
+        recipe isa Union{MinusculeRecipe,VirtualRecipe} || continue
+        ws,local_f = _seed_component(S,k,recipe)
+        symbols = Int[]
+        preserve = _preserve_vector_symbols(S,k)
+        oldweights = preserve ? getsz_def_vec(S) : Vector{Int}[]
+        oldmap = preserve ? crystal_chars_map(S) : Dict{Int,Int}()
+        for w in ws
+            if preserve
+                ix = findfirst(==(collect(w)),oldweights)
+                ix === nothing && error("Seed weight missing from defining alphabet for $S")
+                symbol = only(c for (c,j) in oldmap if j == ix)
+            elseif recipe isa MinusculeRecipe
+                symbol,nextsymbol = _encode_minuscule_symbol(S,w,nextsymbol)
+            else
+                symbol = nextsymbol; nextsymbol = Base.Checked.checked_add(nextsymbol,1)
+            end
+            haskey(indices,symbol) && error("Overlapping seed symbols for $S")
+            push!(symbols,symbol); push!(weights,collect(w)); indices[symbol] = length(weights)
+        end
+        highest[k] = first(symbols)
+        for i in 1:nlops(S), (a,b) in local_f[i]
+            f[i][symbols[a]] = symbols[b]
+        end
+    end
+    e = get_eops_std(f); chars = sort!(collect(keys(indices)))
+    return weights,indices,highest,Crystal_ops{S}(f,e,maximal_apply_num(chars,f),maximal_apply_num(chars,e))
 end

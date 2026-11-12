@@ -59,44 +59,18 @@ _preserve_vector_symbols(::Type, k::Int) = false
 _encode_minuscule_symbol(::Type, w::Tuple, next::Int) = (next, Base.Checked.checked_add(next,1))
 
 """
-    _minuscule_alphabet(S) -> (weights, symbol_indices, highest_symbols, operators)
+    _seed_component(S, k, recipe::MinusculeRecipe) -> (weights, lowering_maps)
 
-Build disjoint deterministic integer alphabets for all minuscule seeds.
-Existing defining symbols are preserved; other seeds occupy successive positive
-ranges. All tables are owned, and weights are stored in local z coordinates.
+Build indexed local minuscule crystal data in first-discovery orbit order.
+The shared alphabet assembler assigns final symbols without altering this order.
 """
-function _minuscule_alphabet(::Type{S}) where S
-    weights = Vector{Int}[]
-    indices = Dict{Int,Int}()
-    highest = Dict{Int,Int}()
+function _seed_component(::Type{S}, k::Int, recipe::MinusculeRecipe) where S
+    ws = minuscule_weights(S,k)
+    index = Dict(w=>j for (j,w) in enumerate(ws))
     f = [Dict{Int,Int}() for _ in 1:nlops(S)]
-    nextsymbol = _minuscule_symbol_start(S)
-    for k in minuscule_nodes(S)
-        ws = minuscule_weights(S, k)
-        symbols = Int[]
-        preserve = _preserve_vector_symbols(S,k)
-        oldweights = preserve ? getsz_def_vec(S) : Vector{Int}[]
-        oldmap = preserve ? crystal_chars_map(S) : Dict{Int,Int}()
-        for w in ws
-            if preserve
-                ix = findfirst(==(collect(w)), oldweights)
-                ix === nothing && error("Minuscule vector weight missing from existing alphabet")
-                symbol = only(c for (c,j) in oldmap if j == ix)
-            else
-                symbol, nextsymbol = _encode_minuscule_symbol(S,w,nextsymbol)
-            end
-            push!(symbols, symbol)
-            push!(weights, collect(w)); indices[symbol] = length(weights)
-        end
-        highest[k] = first(symbols)
-        lookup = Dict(w => symbols[j] for (j,w) in enumerate(ws))
-        for (j,w) in enumerate(ws), i in 1:nlops(S)
-            getqlabel(S,w)[i] == 1 || continue
-            f[i][symbols[j]] = lookup[w .- getdz(S,i)]
-        end
+    for (j,w) in enumerate(ws), i in 1:nlops(S)
+        getqlabel(S,w)[i] == 1 || continue
+        f[i][j] = index[w .- getdz(S,i)]
     end
-    e = get_eops_std(f)
-    chars = sort!(collect(keys(indices)))
-    return weights, indices, highest, Crystal_ops{S}(f,e,maximal_apply_num(chars,f),maximal_apply_num(chars,e))
+    return ws,f
 end
-

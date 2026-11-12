@@ -1,8 +1,8 @@
 # Part 3: Extend numerical irreps to all exceptional families
 
-Status: split design proposal. Parts 1 and 2 provide tensor-word vertices and
-Demazure lowering schedules. This document is the overview and shared policy;
-no numerical implementation is changed by this documentation split.
+Status: Parts 3a and 3b are implemented; Part 3c remains planned. Parts 1 and 2
+provide tensor-word vertices and Demazure lowering schedules. This document
+is the overview and shared policy.
 
 ## Implementation parts
 
@@ -11,9 +11,12 @@ no numerical implementation is changed by this documentation split.
    recipes for all fundamental irreps, and generalize `get_irep_frommw` to
    select nonmaximal tensor components without requiring an existing output irrep.
 2. [Part 3b: Irreps for new symmetries using virtual crystals](crystal_basis_virtual_plan.md).
-   Construct the F4 crystal from E6 seeds, supply its numerical realization,
-   and connect it to the fundamental recipes. Retain the existing G2 backend
-   and use its virtual D4 construction as a cross-check.
+   Obtain B-type, G2, and F4 target crystals through virtual recipes, then
+   construct numerical irreps directly from target strings with binomial norms
+   and integer lowering coefficients. Use the prescribed F4 zero-weight metric
+   and validate sparse self-commutators and symmetry-wide coefficient agreement.
+   This replaces the ambient numerical-word construction. Odd-SO spin seeds,
+   including SO(3), continue to use the minuscule method.
 3. [Part 3c: E8 adjoint crystal and numerical seed](crystal_basis_adjoint_plan.md).
    Build the adjoint crystal and exact adjoint matrices, then enable the
    incremental recipes for E8 fundamentals.
@@ -32,10 +35,9 @@ columns. Do not reintroduce string-coordinate extraction or a separate rank-chec
 gate. Retain existing exact numerical checks and let construction failures
 propagate.
 
-Exceptional family declarations and basic metadata have been introduced; they
-are scaffolding, not completed numerical backends. Before relying on them,
-check Cartan data, node numbering, longest-element words, and duality against
-part 3a's conventions. In particular, E6 is not covered by a blanket self-duality
+G2, F4, E6, and E7 now have seed and product numerical construction. E8
+numerical construction remains deferred to Part 3c. Check Cartan data, node
+numbering, longest-element words, and duality against Part 3a's conventions. In particular, E6 is not covered by a blanket self-duality
 rule. Keep `Irep` and its sparse weight-block storage.
 
 ## Shared numerical and integration requirements
@@ -44,7 +46,8 @@ rule. Keep `Irep` and its sparse weight-block storage.
   integrality/overflow handling. Minuscule edge coefficients and virtual crystal
   operators have different numerical meanings; follow each part's construction.
 - Make actual fundamental labels, bootstrap dependencies, and label splitting
-  consistent. Extract numerical highest vectors from ambient raising kernels;
+  consistent. For product component extraction, obtain numerical highest vectors
+  from product raising kernels;
   a crystal highest tuple is not generally a classical highest pure tensor.
 - Maintain fixed factor/node order and deterministic component-copy selection.
   Enumerate requested components using staged products and precomputed weight
@@ -56,7 +59,8 @@ rule. Keep `Irep` and its sparse weight-block storage.
   compatibility, and existing CG/recoupling identities for enabled backends.
   Preserve w-matrix column isometry and downstream Telum invariants.
 - Version memory and SQLite caches consistently for every basis change. The
-  current namespace is `demazure-v1`; invalidate affected irrep and dependent
+  unchanged minuscule namespace is `minuscule-v2`; B/G2/F4 use
+  `crystal-seed-v1`. Invalidate affected irrep and dependent
   CG/recoupling databases when changing conventions. Never mix old/new bases.
 - Inspect type stability at payload barriers and measure allocation/runtime
   impact where benchmarks exist. Keep heavy per-weight writes independent.

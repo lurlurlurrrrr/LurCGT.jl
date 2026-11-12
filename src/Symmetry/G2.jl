@@ -214,3 +214,17 @@ function getdefirep(::Type{G2}, ::Type{RT}) where {RT<:Number}
     dim = defirepdim(G2)
     return Irep{G2, 2, 2, RT}(def_sl, def_sz, innerprod, inv_innerprod, (1, 0), dim)
 end
+
+"""`fundamental_recipes(G2)` returns the virtual seven-dimensional seed and adjoint product."""
+fundamental_recipes(::Type{G2}) = FundamentalRecipe[
+    VirtualRecipe([1,0],7,SO{8},[[1,3,4],[2,2,2]]),
+    ProductRecipe([0,1],([1,0],[1,0]),1,14)]
+
+"""`irrep_validation_rules(G2)` checks adjoint copies in fundamental-times-dual products."""
+irrep_validation_rules(::Type{G2}) = _irrep_validation_rules(G2,(0,1))
+
+"""`_preserve_vector_symbols(G2, k)` preserves the seven vector crystal symbols."""
+_preserve_vector_symbols(::Type{G2}, k::Int) = k == 1
+
+"""`crystal_basis_version(G2)` isolates virtual construction from legacy cached bases."""
+crystal_basis_version(::Type{G2}) = "crystal-seed-v1"

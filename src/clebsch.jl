@@ -708,32 +708,14 @@ end
 
 Split a non-fundamental qlabel into a smaller remainder and a fundamental part.
 
-`S` selects the symmetry-specific convention. The generic case removes one unit
-from the last nonzero Dynkin coordinate. SO(N) handles odd/even terminal
-coordinates specially so recursive tensor-product construction respects the
-package's doubled/spinor qlabel convention.
+Remove one unit from the last nonzero Dynkin coordinate, including unit
+spin labels. The input must be a nonzero nonnegative label of the correct rank.
 """
-function split_qlabel(::Type{S}, 
-    qlabel::NTuple{NZ, Int}) where {S<:NonabelianSymm, NZ}
-    @assert NZ == nzops(S)
-    # Split the q-label into two smaller q-labels
-    # For example, (a, b, 0, 0) -> (a, b-1, 0, 0) and (0, 1, 0, 0)
-    lastidx = findlast(!iszero, qlabel)
-    smallq = [0 for _=1:NZ]
-    if isSON(S) && isempty(fundamental_recipes(S))
-        N = defirepdim(S)
-        if N % 2 == 1 && lastidx == NZ
-            @assert qlabel[NZ] % 2 == 0; smallq[NZ] = 2
-        elseif N % 2 == 0 && lastidx >= NZ-1
-            @assert (qlabel[NZ-1] + qlabel[NZ]) % 2 == 0
-            if lastidx == NZ && qlabel[NZ] % 2 == 1
-                smallq[NZ-1] = 1; smallq[NZ] = 1
-            else smallq[lastidx] = 2 end
-        else smallq[lastidx] = 1 end
-    else smallq[lastidx] = 1 end
-    smallq = Tuple(smallq)
-    bigq = qlabel .- smallq
-    return bigq, smallq
+function split_qlabel(::Type{S}, qlabel::NTuple{NZ,Int}) where {S<:NonabelianSymm,NZ}
+    @assert NZ == nzops(S) && all(>=(0),qlabel) && any(!iszero,qlabel)
+    k = findlast(!iszero,qlabel)
+    smallq = ntuple(i -> Int(i == k),NZ)
+    return qlabel .- smallq, smallq
 end
 
 """Load or construct the irreducible representation for symmetry `S`, coefficient type `RT`, and q-label `q`. The result is cached in memory/SQLite; q must have width `nzops(S)`."""
@@ -774,7 +756,7 @@ function getNsave_irep(::Type{S},
     if !isnothing(irep) @assert isa(irep, Irep); return irep end
     all(iszero, qlabel) && return initialize_symmetry(S, RT; verbose)
     if isempty(fundamental_recipes(S))
-        throw(ArgumentError("No fundamental irrep backend for $S; B/G2 require the deferred virtual-crystal backend"))
+        throw(ArgumentError("No fundamental irrep recipes for $S"))
     end
     trivial_label = ntuple(_ -> 0, NZ)
     if isnothing(load_irep_sqlite(S, RT, trivial_label; verbose))

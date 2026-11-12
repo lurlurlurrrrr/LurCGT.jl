@@ -377,3 +377,78 @@ function same_irep_fields(a::Irep, b::Irep)
     return a.Sl == b.Sl && a.Sz == b.Sz && a.innerprod == b.innerprod &&
         a.inv_innerprod == b.inv_innerprod && a.qlabel == b.qlabel && a.dimension == b.dimension
 end
+
+"""
+    _complete_seed_blocks!(S, lowering, metric, weights, f, local_index)
+
+Finalize direct-crystal seed blocks. The default accepts only multiplicity-one
+weights; symmetry-specific methods may fill repeated-weight metric and lowering
+entries. Arguments contain owned construction storage, not cached irreps.
+"""
+function _complete_seed_blocks!(::Type{S}, lowering, metric, weights, f, local_index) where S
+    all(G -> size(G)==(1,1),values(metric)) ||
+        error("Unsupported repeated weight in direct crystal seed for $S")
+    return nothing
+end
+
+"""
+    _irep_from_seed_crystal(S, RT, weights, f) -> Irep
+
+Build exact seed matrices from maximal target strings with coefficients 1:n
+and binomial norms. `weights` and indexed lowering maps `f` are in Demazure
+first-discovery order. Group weights in descending stored-weight order while
+preserving discovery order within each weight. Conflicting nontrivial-string
+norms raise an error; isolated vertices retain norm one. Symmetry-specific
+completion handles supported repeated weights. No inputs or caches are mutated.
+"""
+function _irep_from_seed_crystal(::Type{S}, ::Type{RT},
+        weights::Vector{NTuple{NZ,Int}}, f::Vector{Dict{Int,Int}}) where {S,RT<:Integer,NZ}
+    n = length(weights); NL = nlops(S)
+    length(f) == NL || error("Wrong lowering-map count for $S")
+    groups = Dict{NTuple{NZ,Int},Vector{Int}}()
+    local_index = zeros(Int,n)
+    for (k,w) in enumerate(weights)
+        group = get!(() -> Int[],groups,w)
+        push!(group,k); local_index[k] = length(group)
+    end
+    Sz = Dict{NTuple{NZ,Int},Tuple{Int,Int}}()
+    metric = Dict{NTuple{NZ,Int},Matrix{RT}}()
+    count = 0
+    for w in sorted_zvals(groups)
+        d = length(groups[w])
+        Sz[w] = (count+1,count+d); count += d
+        metric[w] = zeros(RT,d,d)
+    end
+    lowering = ntuple(_ -> Dict{NTuple{NZ,Int},SparseMatrixCSC{RT}}(),NL)
+    norms = ones(RT,n); assigned = falses(n)
+    for i in 1:NL
+        predecessors = Set(values(f[i]))
+        for start in eachindex(weights)
+            (start in predecessors || !haskey(f[i],start)) && continue
+            chain = [start]; k = start
+            while haskey(f[i],k)
+                next = f[i][k]
+                weights[next] == weights[k] .- getdz(S,i) ||
+                    error("Incorrect crystal weight shift for $S node $i at $(weights[k])")
+                push!(chain,next); k = next
+            end
+            steps = length(chain)-1
+            for (position,k) in enumerate(chain)
+                value = RT(binomial(big(steps),position-1))
+                assigned[k] && norms[k] != value &&
+                    error("Conflicting crystal norms for $S node $i at $(weights[k])")
+                norms[k] = value; assigned[k] = true
+                position > steps && continue
+                next = chain[position+1]; w = weights[k]; dest = weights[next]
+                block = get!(() -> spzeros(RT,length(groups[dest]),length(groups[w])),lowering[i],w)
+                block[local_index[next],local_index[k]] = RT(position)
+            end
+        end
+    end
+    for (k,w) in enumerate(weights)
+        metric[w][local_index[k],local_index[k]] = norms[k]
+    end
+    _complete_seed_blocks!(S,lowering,metric,weights,f,local_index)
+    only(metric[first(sorted_zvals(metric))]) == 1 || error("Nonunit highest norm for $S")
+    return Irep(S,RT,lowering,Sz,metric,get_inv_innerprod(S,metric),n)
+end

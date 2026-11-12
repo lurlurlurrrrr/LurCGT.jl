@@ -53,10 +53,12 @@ struct IrrepValidationRule
 end
 ```
 
-`VirtualRecipe <: FundamentalRecipe` will be defined in the next step, when
-its required fields are known. Do not introduce placeholder fields or a dummy
-virtual implementation now. The interpreter can gain that subtype's method
-without changing the existing recipe types or catalogue container.
+The revised [Part 3b plan](crystal_basis_virtual_plan.md) retains
+`VirtualRecipe <: FundamentalRecipe` with target, dimension, ambient symmetry,
+and operator words. Those words construct the target crystal only. The numerical interpreter uses target-string coefficients and metrics,
+including F4's prescribed zero-weight block, and sparse commutator validation.
+The ambient numerical interpreter has been removed; the recipe type and
+catalogue container are unchanged.
 
 `fundamental_recipes(S)` returns a `Vector{FundamentalRecipe}`, indexed by
 fundamental node. Dependencies are requested recursively; there is no order
@@ -78,7 +80,7 @@ FundamentalRecipe[
 A product's sources belong to the target symmetry and retain their factor
 order. The concrete recipe type selects the construction, not the mathematical
 name of the result: SO(8)'s adjoint above uses `ProductRecipe`.
-Unavailable adjoint/virtual numerical backends remain deferred.
+The `AdjointRecipe` numerical backend remains deferred to Part 3c.
 
 Keep recipe labels as vectors to avoid creating a different metadata type for
 every rank. At the existing numerical API boundary, check label length and

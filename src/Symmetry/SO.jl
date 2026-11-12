@@ -5,8 +5,8 @@
 
 Return whether `SO{N}` is supported by this implementation.
 
-`N` is the vector dimension. Metadata accepts `N >= 2`; the minuscule
-backend supports even `N >= 4`, including Lie-algebra/Spin half-spin irreps.
+`N` is the vector dimension. Metadata accepts `N >= 2`. Spin fundamentals
+use minuscule recipes; odd-SO vector recipes require validated virtual data.
 SO(2) is Abelian and does not use this fundamental construction.
 """
 isvalidsymm(::Type{SO{N}}) where N = 2 <= N
@@ -301,14 +301,15 @@ get_dualq(::Type{SO{N}}, q::NTuple{R,Int}) where {N,R} = iseven(N) && isodd(R) ?
 """`fundamental_qlabels(SO)` preserves historical label enumeration without scheduling construction."""
 function fundamental_qlabels(::Type{S}) where {S<:SO}
     recipes = fundamental_recipes(S)
-    return [_recipe_label(S,recipes[k].target) for k in unique(vcat([1,nzops(S)-1,nzops(S)],collect(2:nzops(S)-2)))]
+    order = isodd(defirepdim(S)) ? collect(eachindex(recipes)) : unique(vcat([1,nzops(S)-1,nzops(S)],collect(2:nzops(S)-2)))
+    return [_recipe_label(S,recipes[k].target) for k in order]
 end
 
 """`_minuscule_symbol_start(SO)` reserves the existing vector alphabet."""
 _minuscule_symbol_start(::Type{SO{N}}) where N = nzops(SO{N})+1
 
 """`_preserve_vector_symbols(SO, k)` keeps vector-seed symbol assignments compatible."""
-_preserve_vector_symbols(::Type{SO{N}}, k::Int) where N = k == 1 && N != 4
+_preserve_vector_symbols(::Type{SO{N}}, k::Int) where N = k == 1 && N != 3 && N != 4
 
 """
     _encode_minuscule_symbol(SO{N}, w, next) -> (symbol, next)
@@ -335,7 +336,7 @@ function irrep_validation_rules(::Type{S}) where {S<:SO}
         end
         return rules
     end
-    adjoint = _unit_label(S,2)
+    adjoint = r == 1 ? (2,) : S == SO{5} ? (0,2) : _unit_label(S,2)
     rules = _irrep_validation_rules(S,adjoint)
     if S == SO{8}
         for k in (3,4)
@@ -354,8 +355,19 @@ Return owned metadata indexed by fundamental node. Dependencies are recursive;
 no numerical representations or crystal vertices are constructed here.
 """
 function fundamental_recipes(::Type{S}) where {N,S<:SO{N}}
-    iseven(N) && N >= 4 || return FundamentalRecipe[]
+    N >= 3 || return FundamentalRecipe[]
     r = div(N,2); recipes = FundamentalRecipe[]
+    if isodd(N)
+        N == 3 && return FundamentalRecipe[MinusculeRecipe([1],2)]
+        words = vcat([[i,i] for i in 1:r-1], [[r,r+1]])
+        push!(recipes,VirtualRecipe(collect(_unit_label(S,1)),N,SO{N+1},words))
+        for k in 2:r-1
+            push!(recipes,ProductRecipe(collect(_unit_label(S,k)),
+                (collect(_unit_label(S,k-1)),collect(_unit_label(S,1))),1,Int(binomial(big(N),k))))
+        end
+        push!(recipes,MinusculeRecipe(collect(_unit_label(S,r)),Int(big(2)^r)))
+        return recipes
+    end
     for k in 1:r
         q = collect(_unit_label(S,k))
         if k >= r-1
@@ -369,3 +381,6 @@ function fundamental_recipes(::Type{S}) where {N,S<:SO{N}}
     end
     return recipes
 end
+
+"""`crystal_basis_version(SO)` isolates new odd-SO bases from legacy cached data."""
+crystal_basis_version(::Type{SO{N}}) where N = isodd(N) ? "crystal-seed-v1" : CRYSTAL_BASIS_VERSION

@@ -82,10 +82,186 @@ end
     @test conjperm.perm == get_conj_perm(get_CGTom(SU{2}, ((1,), (1,)), ((1,), (1,))))
 end
 
-@testset "deferred virtual-crystal irrep backends" begin
-    for (S,q) in ((SO{5},(1,0)),(SO{7},(0,0,1)),(G2,(1,0)))
-        @test isempty(LurCGT.fundamental_recipes(S))
-        @test_throws ArgumentError LurCGT.getNsave_irep(S,BigInt,q)
+@testset "sparse lowering matrices respect the metric and weight order" begin
+    rep = LurCGT.getNsave_irep(SU{2},BigInt,(2,))
+    @test_throws BoundsError lowering_matrix(rep,0)
+    trivial = LurCGT.gettrivirep(SU{2},BigInt)
+    Forth = @inferred lowering_matrix(rep,1)
+    @test Forth isa SparseMatrixCSC{Float64,Int}
+    @test Forth ≈ [0 0 0; sqrt(2) 0 0; 0 sqrt(2) 0]
+    @test lowering_matrix(trivial,1) == spzeros(1,1)
+    @test (@inferred lowering_matrix(rep,1,BigFloat)) isa SparseMatrixCSC{BigFloat,Int}
+    @test (@inferred ordered_zvalues(rep)) == [(2,), (0,), (-2,)]
+    @test ordered_zvalues(trivial) == [(0,)]
+    adjoint = LurCGT.getNsave_irep(SU{3},BigInt,(1,1))
+    weights = @inferred ordered_zvalues(adjoint)
+    @test length(weights) == 8
+    @test count(==((0,0)),weights) == 2
+    G = zeros(8,8); C = zeros(8,8)
+    for (w,(a,b)) in adjoint.Sz
+        G[a:b,a:b] = adjoint.innerprod[w]
+        C[a:b,a:b] = cholesky(Symmetric(G[a:b,a:b])).U
+    end
+    @test !isdiag(G) # Exercise the full metric of the degenerate zero-weight space.
+    for i in 1:2
+        rows,cols,_ = findnz(lowering_matrix(adjoint,i))
+        @test all(weights[r] == weights[c] .- LurCGT.getdz(SU{3},i)
+                  for (r,c) in zip(rows,cols))
+        F = zeros(8,8)
+        for (w,block) in adjoint.Sl[i]
+            a,b = adjoint.Sz[w]
+            c,d = adjoint.Sz[w .- LurCGT.getdz(SU{3},i)]
+            F[c:d,a:b] = block
+        end
+        E = G \ (F' * G)
+        Forth = lowering_matrix(adjoint,i)
+        @test Forth' ≈ C * E / C
+    end
+end
+
+@testset "virtual recipe crystal alignment and repeated weights" begin
+    for (S,k,d,distinct) in ((SO{5},1,5,5),(SO{7},1,7,7),(G2,1,7,7),(F4,4,26,25))
+        recipes = LurCGT.fundamental_recipes(S)
+        @test LurCGT.validate_recipe_catalogue(S,recipes) === nothing
+        recipe = recipes[k]
+        @test recipe isa LurCGT.VirtualRecipe
+        vertices,weights,_ = LurCGT._virtual_seed_data(S,recipe,recipe.ambient)
+        @test length(vertices) == d
+        @test length(unique(weights)) == distinct
+        target = LurCGT.mw_crystal_qlabel(S,Tuple(recipe.target))
+        component = LurCGT._component_vertices(S,target)
+        @test length(component) == d
+        @test all(v -> length(v.word)==1,component)
+        @test [LurCGT.get_weight(v) for v in component] == weights
+        if S == F4
+            @test count(==((0,0,0,0)),weights) == 2
+            @test length(unique(v.word for v in component if LurCGT.get_weight(v)==(0,0,0,0))) == 2
+        end
+    end
+    for (S,q,d) in ((SO{7},(0,1,0),21),(G2,(0,1),14),
+                     (F4,(1,0,0,0),52),(F4,(0,0,1,0),273),(F4,(0,1,0,0),1274))
+        @test length(LurCGT._component_vertices(S,LurCGT.mw_crystal_qlabel(S,q))) == d
+    end
+    for (words,ambient) in (([[1,3,4],[2,2]],SO{8}),
+                             ([[1,3],[2,2,2]],SO{8}),
+                             ([[1,2,3],[4,4,4]],SO{8}),
+                             ([[1,3,4],Int[]],SO{8}))
+        r = LurCGT.VirtualRecipe([1,0],7,ambient,words)
+        @test_throws ArgumentError LurCGT._validate_recipe(G2,r)
+    end
+end
+
+@testset "odd orthogonal unit spin labels" begin
+    for (S,q,d) in ((SO{3},(1,),2),(SO{3},(2,),3),(SO{5},(0,1),4),(SO{7},(0,0,1),8))
+        rep = LurCGT.getNsave_irep(S,BigInt,q)
+        @test dimension(rep) == d
+        @test rep.qlabel == q
+    end
+    @test LurCGT.split_qlabel(SO{7},(0,0,2)) == ((0,0,1),(0,0,1))
+    @test LurCGT.crystal_basis_version(SO{7}) != LurCGT.CRYSTAL_BASIS_VERSION
+    @test LurCGT.crystal_basis_version(SO{8}) == LurCGT.CRYSTAL_BASIS_VERSION
+    @test occursin("crystal-seed-v1",LurCGT.sqlite_db_path(G2))
+end
+
+@testset "direct crystal seeds and generator normalization" begin
+    for (S,q,d) in ((SO{5},(1,0),5),(SO{7},(1,0,0),7),(G2,(1,0),7),(F4,(0,0,0,1),26))
+        rep = LurCGT.getNsave_irep(S,BigInt,q)
+        @test dimension(rep) == d
+        @test rep.qlabel == q
+        @test LurCGT.same_irep_fields(rep,LurCGT.load_irep_sqlite(S,BigInt,q))
+        coefficients = @inferred validate_crystal_generators(rep)
+        @test size(coefficients) == (LurCGT.nlops(S),nzops(S))
+        if S == SO{5} || S == SO{7}
+            spin = LurCGT.getNsave_irep(S,BigInt,ntuple(i -> Int(i==nzops(S)),nzops(S)))
+            @test coefficients ≈ validate_crystal_generators(spin)
+        end
+    end
+    for S in (SO{5},SO{7},G2)
+        q = ntuple(i -> Int(i==1),nzops(S))
+        rep = LurCGT.getNsave_irep(S,BigInt,q)
+        for (w,G) in rep.innerprod
+            @test G == (all(iszero,w) ? BigInt[2;;] : BigInt[1;;])
+        end
+    end
+    rep = LurCGT.getNsave_irep(F4,BigInt,(0,0,0,1))
+    @test rep.innerprod[(0,0,0,0)] == BigInt[2 1; 1 2]
+    @test all(w == (0,0,0,0) || G == BigInt[1;;] for (w,G) in rep.innerprod)
+    @test Float64.(validate_crystal_generators(rep,BigFloat)) ≈ validate_crystal_generators(rep)
+    for i in (3,4)
+        @test sort(vec(Matrix(rep.Sl[i][(0,0,0,0)]))) == [1,2]
+    end
+    bad = deepcopy(rep)
+    first(values(bad.Sl[1])) .*= 2
+    @test_throws ErrorException validate_crystal_generators(bad)
+    @test_throws ErrorException validate_crystal_generators(LurCGT.gettrivirep(G2,BigInt))
+end
+
+@testset "generator relations across minuscule and product fundamentals" begin
+    cases = ((SU{2},1:1),(SU{3},1:2),(SU{4},1:3),(SU{5},1:4),(SU{6},1:5),
+             (Sp{2},1:1),(Sp{4},1:2),(Sp{6},1:3),(Sp{8},1:4),
+             (SO{6},1:3),(SO{8},1:4),(SO{10},1:5),
+             (E6,(1,6,2,3,5)),(E7,(7,1,2,6)))
+    for (S,nodes) in cases
+        @testset "$S" begin
+            recipes = LurCGT.fundamental_recipes(S)
+            reference = nothing
+            for k in nodes
+                recipe = recipes[k]
+                rep = LurCGT.getNsave_irep(S,BigInt,Tuple(recipe.target))
+                @test dimension(rep) == recipe.dimension
+                coefficients = validate_crystal_generators(rep;reference)
+                @test size(coefficients) == (LurCGT.nlops(S),nzops(S))
+                reference === nothing && (reference = coefficients)
+            end
+        end
+    end
+end
+
+@testset "SO4 spin generators share the faithful vector normalization" begin
+    vector = LurCGT.getNsave_irep(SO{4},BigInt,(1,1))
+    reference = validate_crystal_generators(vector)
+    for q in ((1,0),(0,1))
+        spin = LurCGT.getNsave_irep(SO{4},BigInt,q)
+        @test_throws ErrorException validate_crystal_generators(spin)
+        @test (@inferred validate_crystal_generators(spin;reference)) ≈ reference
+    end
+    @test_throws ArgumentError validate_crystal_generators(vector;reference=zeros(1,1))
+    @test_throws ErrorException validate_crystal_generators(vector;reference=2reference)
+end
+
+@testset "direct seeds agree with product construction" begin
+    for S in (SO{7},G2)
+        @test LurCGT.validate_fundamental_ireps(S) > 0
+    end
+    for (S,seed,left,right) in (
+            (SO{5},[1,0],[0,1],[0,1]),
+            (SO{7},[1,0,0],[0,0,1],[0,0,1]),
+            (G2,[1,0],[1,0],[0,1]),
+            (F4,[0,0,0,1],[0,0,0,1],[1,0,0,0]))
+        rules = [LurCGT.IrrepValidationRule(seed,(left,right))]
+        @test LurCGT.validate_fundamental_products(S;rules) > 0
+        rep = LurCGT.getNsave_irep(S,BigInt,Tuple(right))
+        reference = LurCGT.getNsave_irep(S,BigInt,Tuple(seed))
+        @test validate_crystal_generators(rep) ≈ validate_crystal_generators(reference)
+        q = Tuple(seed); zero_q = ntuple(_ -> 0,nzops(S))
+        cg = LurCGT.getNsave_cg3(S,BigInt,(q,q),[zero_q])[zero_q]
+        numerical,_,_ = to_float(cg)
+        @test norm(Array(numerical)) ≈ 1
+    end
+    @test dimension(LurCGT.getNsave_irep(F4,BigInt,(0,0,1,0))) == 273
+end
+
+@testset "F4 integer weight coordinates" begin
+    A = LurCGT._exceptional_cartan(F4)
+    for q in ((1,0,0,0),(0,1,0,0),(0,0,1,0),(0,0,0,1),(-1,2,-3,4))
+        z = LurCGT.qlab2mwz(F4,q)
+        @test LurCGT.getqlabel(F4,z) == q
+        for i in 1:4
+            step = LurCGT.getdz(F4,i)
+            @test step == ntuple(j -> Int(j==5-i),4)
+            @test LurCGT.getqlabel(F4,z .- step) == q .- Tuple(A[:,i])
+            @test LurCGT.rev_less(z .- step,z)
+        end
     end
 end
 
@@ -212,14 +388,13 @@ end
 @testset "highest tensor words" begin
     for (S, q) in ((SU{3}, (2,2)), (Sp{6}, (1,1,1)),
                     (SO{8}, (1,1,2,0)), (SO{8}, (1,1,0,2)),
-                    (SO{8}, (0,0,1,1)))
+                    (SO{8}, (0,0,1,1)), (SO{3}, (1,)), (SO{7}, (0,0,1)))
         word = LurCGT.mw_crystal_qlabel(S,q)
         @test word.word isa Vector{Int}
         @test LurCGT.get_weight(word) == LurCGT.qlab2mwz(S,q)
     end
     @test LurCGT.mw_crystal_qlabel(G2, (2, 1)).word == [1, 1, 2, 1]
-    @test LurCGT.mw_crystal_qlabel(SO{7}, (1, 1, 2)).word == [1, 2, 1, 3, 2, 1]
-    @test_throws AssertionError LurCGT.mw_crystal_qlabel(SO{7}, (0, 0, 1))
+    @test LurCGT.mw_crystal_qlabel(SO{7}, (1, 1, 2)).word == [1, 2, 1, 4, 4]
 end
 
 @testset "SO half-spin labels round trip" begin

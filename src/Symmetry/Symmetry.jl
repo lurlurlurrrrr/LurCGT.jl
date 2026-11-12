@@ -95,6 +95,22 @@ struct ProductRecipe <: FundamentalRecipe
 end
 
 """
+    VirtualRecipe(target, dimension, ambient, operator_words)
+
+Describe a fundamental seed virtualized in an ambient symmetry. Each owned
+integer word gives one target lowering in ambient execution order; repeated
+indices form a single run. These words act only on crystals; numerical
+coefficients and metrics are constructed from target strings. The ambient
+highest label is derived from target labels and index repetition counts.
+"""
+struct VirtualRecipe <: FundamentalRecipe
+    target::Vector{Int}
+    dimension::Int
+    ambient::DataType
+    operator_words::Vector{Vector{Int}}
+end
+
+"""
     IrrepValidationRule(target::Vector{Int}, sources::NTuple{2,Vector{Int}})
 
 Compare every target copy extracted from the ordered sources with the canonical
